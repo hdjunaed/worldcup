@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # Page setup for modern mobile responsiveness
@@ -61,53 +61,64 @@ with tab2:
     
     if user != "Select your name...":
         current_time = get_current_aest()
+        today = current_time.date()
+        tomorrow = today + timedelta(days=1)
         
-        # Only show matches that haven't kicked off yet
-        open_matches = matches_df[matches_df['Kickoff_AEST'] > current_time].copy()
+        # Filter matches: Status is not Completed AND Kickoff is either Today or Tomorrow
+        matches_df['Kickoff_Date'] = matches_df['Kickoff_AEST'].dt.date
+        open_matches = matches_df[
+            (matches_df['Status'] != 'Completed') & 
+            (matches_df['Kickoff_Date'].isin([today, tomorrow]))
+        ].copy()
         
         if open_matches.empty:
-            st.info("No upcoming matches available for prediction right now.")
+            st.info("No matches scheduled for today or tomorrow are available for prediction.")
         else:
             match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {r['Home_Team']} vs {r['Away_Team']}", axis=1).tolist()
-            selected_pred_match = st.selectbox("Choose a match:", match_options)
+            selected_pred_match = st.selectbox("Choose an upcoming match:", match_options)
             
             m_id = selected_pred_match.split(":")[0].replace("Match ", "").strip()
             m_row = matches_df[matches_df['Match_ID'] == m_id].iloc[0]
             
-            st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')} AEST")
+            # Show kickoff status
+            is_locked = current_time >= m_row['Kickoff_AEST']
+            lock_status = "🔒 LOCKED (Match Started)" if is_locked else "⏳ Open for Predictions"
+            st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')} AEST ({lock_status})")
             
-            # Show current locked values from the spreadsheet if they exist
+            # Fixed the typo here: replaced stray '{p}_Score' with '{user}_Score'
             existing_out = str(m_row[f'{user}_Outcome']) if f'{user}_Outcome' in matches_df.columns and pd.notna(m_row[f'{user}_Outcome']) else "None"
-            existing_score = str(m_row[f'{user}_Score']) if f'{p}_Score' in matches_df.columns and pd.notna(m_row[f'{user}_Score']) else "None"
+            existing_score = str(m_row[f'{user}_Score']) if f'{user}_Score' in matches_df.columns and pd.notna(m_row[f'{user}_Score']) else "None"
             
-            st.info(f"Current saved lock: **{existing_out}** | **{existing_score}**")
+            st.info(f"Current saved lock in sheet: **{existing_out}** | **{existing_score}**")
             st.divider()
             
-            # Input via Dropdowns to eliminate free-text typos
-            p_out = st.selectbox("1. Who will win?", ["Select outcome...", m_row['Home_Team'], m_row['Away_Team'], "Draw"])
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                p_home_score = st.number_input(f"{m_row['Home_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
-            with col2:
-                p_away_score = st.number_input(f"{m_row['Away_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
+            if is_locked:
+                st.warning("This match has already kicked off! You can no longer submit or edit predictions for it.")
+            else:
+                # Dropdowns for clean selection
+                p_out = st.selectbox("1. Who will win?", ["Select outcome...", m_row['Home_Team'], m_row['Away_Team'], "Draw"])
                 
-            predicted_score_str = f"{p_home_score}-{p_away_score}"
-            
-            if st.button("Lock Prediction In"):
-                if p_out == "Select outcome...":
-                    st.error("Please pick a winner or select 'Draw' before submitting!")
-                else:
-                    # --- DRAW VALIDATION CHECKS ---
-                    if p_out == "Draw" and p_home_score != p_away_score:
-                        st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie! Please update your choices.")
-                    elif p_out != "Draw" and p_home_score == p_away_score:
-                        st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome! Please update your choices.")
+                col1, col2 = st.columns(2)
+                with col1:
+                    p_home_score = st.number_input(f"{m_row['Home_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
+                with col2:
+                    p_away_score = st.number_input(f"{m_row['Away_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
+                    
+                predicted_score_str = f"{p_home_score}-{p_away_score}"
+                
+                if st.button("Validate & Lock Prediction"):
+                    if p_out == "Select outcome...":
+                        st.error("Please pick a winner or select 'Draw' before submitting!")
                     else:
-                        # Success instructions
-                        st.success("✅ Prediction Validated! Copy and paste these exact values into the Google Sheet columns:")
-                        st.code(f"For column {user}_Outcome: {p_out}\nFor column {user}_Score: {predicted_score_str}")
-                        st.warning("Note: Because this is the lightweight, secure version, paste these values directly into your row in the shared Google Sheet to finalize the lock!")
+                        # --- DRAW VALIDATION CHECKS ---
+                        if p_out == "Draw" and p_home_score != p_away_score:
+                            st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie! Please update your choices.")
+                        elif p_out != "Draw" and p_home_score == p_away_score:
+                            st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome! Please update your choices.")
+                        else:
+                            st.success("✅ Prediction Validated! Copy and paste these exact values into the Google Sheet columns:")
+                            st.code(f"For column {user}_Outcome: {p_out}\nFor column {user}_Score: {predicted_score_str}")
+                            st.warning("Note: Enter these values into your row in the shared Google Sheet to lock it in.")
 
 # --- TAB 3: ADMIN ENGINE ---
 with tab3:
