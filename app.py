@@ -3,13 +3,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 import gspread
-import re
 from google.oauth2.service_account import Credentials
 
-# 1. Page setup changed to "wide" to prevent horizontal scrollbars
+# Page setup - "wide" layout to prevent horizontal scrollbars
 st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="wide")
 
-# 2. Inject Custom CSS to force a clean white background theme
+# Inject Custom CSS to force a clean white background theme
 st.markdown("""
     <style>
         /* Force white background for the main app container */
@@ -43,13 +42,6 @@ st.markdown("""
 st.title("🏆 WORLD CUP PREDICTION CHALLENGE")
 st.caption("Broadcast live on SBS | All times shown in AEST")
 
-# Helper function to remove flags/emojis from country names automatically
-def clean_country_name(text):
-    if not isinstance(text, str):
-        return text
-    # Strip out emoji character ranges (including flags)
-    return re.sub(r'[\U00010000-\U0010ffff\u2600-\u27bf]', '', text).strip()
-
 # Helper function to get current AEST time safely
 def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
@@ -72,7 +64,7 @@ def get_gspread_client():
 # Initialize Client and Fetch Data Rows
 gc = get_gspread_client()
 
-# 📝 Put your real Google Spreadsheet ID string between the quotes below:
+# 📝 Paste your real Google Spreadsheet ID string between the quotes below!
 SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
 
 try:
@@ -96,18 +88,12 @@ try:
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
 except Exception as e:
     st.error(f"❌ Connection Blocked: Error type `{type(e).__name__}`")
-    st.info("Ensure your spreadsheet ID is correctly updated in app.py line 61.")
+    st.info("Ensure your spreadsheet ID is correctly updated in app.py.")
     st.stop()
 
 # Clean up dataframe column headers
 matches_df.columns = matches_df.columns.str.strip()
 leaderboard_df.columns = leaderboard_df.columns.str.strip()
-
-# Clean flag emojis out of Home and Away team columns if they exist
-if 'Home_Team' in matches_df.columns:
-    matches_df['Home_Team'] = matches_df['Home_Team'].apply(clean_country_name)
-if 'Away_Team' in matches_df.columns:
-    matches_df['Away_Team'] = matches_df['Away_Team'].apply(clean_country_name)
 
 # Ensure types are correct
 matches_df['Match_ID'] = matches_df['Match_ID'].astype(str)
@@ -156,7 +142,7 @@ with tab2:
             saved_out = row.get(f'{user}_Outcome', "")
             saved_score = row.get(f'{user}_Score', "")
             
-            out_display = clean_country_name(str(saved_out)) if pd.notna(saved_out) and str(saved_out).strip() != "" else "Not Submitted Yet"
+            out_display = str(saved_out) if pd.notna(saved_out) and str(saved_out).strip() != "" else "Not Submitted Yet"
             score_display = str(saved_score) if pd.notna(saved_score) and str(saved_score).strip() != "" else "Not Submitted Yet"
             
             overview_rows.append({
@@ -288,7 +274,7 @@ with tab3:
                 p_out_col = f'{p}_Outcome'
                 p_score_col = f'{p}_Score'
                 
-                p_out = clean_country_name(str(match_row[p_out_col])).strip() if p_out_col in matches_df.columns and pd.notna(match_row[p_out_col]) else ""
+                p_out = str(match_row[p_out_col]).strip() if p_out_col in matches_df.columns and pd.notna(match_row[p_out_col]) else ""
                 p_score = str(match_row[p_score_col]).strip() if p_score_col in matches_df.columns and pd.notna(match_row[p_score_col]) else ""
                 
                 outcome_correct = (p_out.lower() == actual_outcome.lower())
