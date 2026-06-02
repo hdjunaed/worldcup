@@ -16,7 +16,7 @@ def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
 # 🔐 Establish Direct Google Sheets Connection Engine
-@st.cache_resource(ttl=3)  # Low TTL during configuration testing
+@st.cache_resource(ttl=3)
 def get_gspread_client():
     try:
         secret_info = st.secrets["connections"]["gsheets"]
@@ -33,13 +33,11 @@ def get_gspread_client():
 # Initialize Client and Fetch Data Rows
 gc = get_gspread_client()
 
-# 🚨 CRITICAL: Check this ID very closely against your browser URL string!
-SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
+# 📝 NOTE: Make sure your real Google Spreadsheet ID string is pasted between the quotes below!
+SPREADSHEET_ID = "YOUR_ACTUAL_SPREADSHEET_ID_HERE"
 
 try:
     sh = gc.open_by_key(SPREADSHEET_ID)
-    
-    # Dynamic worksheet finder that ignores trailing/leading spaces
     all_worksheets = {ws.title.strip().lower(): ws for ws in sh.worksheets()}
     
     if "matches" in all_worksheets:
@@ -59,24 +57,7 @@ try:
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
 except Exception as e:
     st.error(f"❌ Connection Blocked: Error type `{type(e).__name__}`")
-    
-    st.markdown("---")
-    st.markdown("### 🔍 Live Connection Diagnostic Engine")
-    st.info("Scanning Google Drive to see exactly what files this bot has explicit permission to open right now...")
-    
-    try:
-        visible_sheets = gc.openall()
-        if not visible_sheets:
-            st.error("⚠️ **The bot logged in successfully, but finds 0 spreadsheets.**")
-            st.write("This means Google's servers haven't applied the permission update yet, or the sheet was shared to a slightly different service account email than what is in your secrets.")
-        else:
-            st.success(f"✅ **The bot successfully found {len(visible_sheets)} spreadsheet(s) on your account:**")
-            for sheet in visible_sheets:
-                st.write(f"• 📂 **Title:** `{sheet.title}` | 🔑 **ID:** `{sheet.id}`")
-            st.info("👉 Match the ID above with the `SPREADSHEET_ID` inside your code to fix the mismatch instantly!")
-    except Exception as diag_err:
-        st.error(f"Diagnostic tool failed to search: {diag_err}")
-        
+    st.info("Check that the Google Sheets and Google Drive APIs are enabled in your Google Cloud Console.")
     st.stop()
 
 # Clean up dataframe column headers
@@ -116,10 +97,47 @@ with tab2:
         current_time = get_current_aest()
         today = current_time.date()
         tomorrow = today + timedelta(days=1)
-        
         matches_df['Kickoff_Date'] = matches_df['Kickoff_AEST'].dt.date
         
-        # Opening days evaluation parameters
+        # 📋 1. LIVE CURRENT & FUTURE PREDICTIONS OVERVIEW
+        st.markdown(f"### 📊 Your Active Predictions Overview ({user})")
+        
+        # Filter down to only non-completed games (current and future)
+        active_matches = matches_df[matches_df['Status'] != 'Completed'].copy()
+        
+        overview_rows = []
+        for _, row in active_matches.iterrows():
+            m_id = row['Match_ID']
+            match_name = f"{row['Home_Team']} vs {row['Away_Team']}"
+            kickoff_str = row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')
+            
+            # Check current saved locks
+            saved_out = row.get(f'{user}_Outcome', "")
+            saved_score = row.get(f'{user}_Score', "")
+            
+            out_display = f"🟢 {saved_out}" if pd.notna(saved_out) and str(saved_out).strip() != "" else "❌ Not Submitted Yet"
+            score_display = f"🔢 {saved_score}" if pd.notna(saved_score) and str(saved_score).strip() != "" else "❌ Not Submitted Yet"
+            
+            overview_rows.append({
+                "Match ID": m_id,
+                "Fixture": match_name,
+                "Kickoff Time (AEST)": kickoff_str,
+                "Your Predicted Winner": out_display,
+                "Your Predicted Score": score_display
+            })
+            
+        if overview_rows:
+            overview_df = pd.DataFrame(overview_rows)
+            st.dataframe(overview_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No active or upcoming matches listed right now.")
+            
+        st.divider()
+        
+        # ✍️ 2. PREDICTION SUBMISSION FORM
+        st.markdown("### ✍️ Submit or Edit a Prediction")
+        
+        # Opening days evaluation window parameters
         opening_day_1 = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
         opening_day_2 = datetime.strptime("2026-06-13", "%Y-%m-%d").date()
         
@@ -135,64 +153,57 @@ with tab2:
             ].copy()
         
         if open_matches.empty:
-            st.info("No matches scheduled right now are available for prediction.")
+            st.info("No matches scheduled for this window are open for entry updates right now.")
         else:
             match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {r['Home_Team']} vs {r['Away_Team']} ({r['Kickoff_AEST'].strftime('%d %b')})", axis=1).tolist()
-            selected_pred_match = st.selectbox("Choose an upcoming match:", match_options)
+            selected_pred_match = st.selectbox("Choose a match to log/modify:", match_options)
             
             m_id = selected_pred_match.split(":")[0].replace("Match ", "").strip()
             m_idx = matches_df[matches_df['Match_ID'] == m_id].index[0]
             m_row = matches_df.loc[m_idx]
             
             is_locked = current_time >= m_row['Kickoff_AEST']
-            lock_status = "🔒 LOCKED" if is_locked else "⏳ Open for Predictions"
+            lock_status = "🔒 LOCKED" if is_locked else "⏳ Open for Changes"
             st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')} AEST ({lock_status})")
             
-            existing_out = str(m_row[f'{user}_Outcome']) if f'{user}_Outcome' in matches_df.columns and pd.notna(m_row[f'{user}_Outcome']) else "None"
-            existing_score = str(m_row[f'{user}_Score']) if f'{user}_Score' in matches_df.columns and pd.notna(m_row[f'{user}_Score']) else "None"
+            p_out = st.selectbox("1. Who will win?", ["Select outcome...", m_row['Home_Team'], m_row['Away_Team'], "Draw"])
             
-            st.info(f"Current saved lock in sheet: **{existing_out}** | **{existing_score}**")
-            st.divider()
+            col1, col2 = st.columns(2)
+            with col1:
+                p_home_score = st.number_input(f"{m_row['Home_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
+            with col2:
+                p_away_score = st.number_input(f"{m_row['Away_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
+                
+            predicted_score_str = f"{p_home_score}-{p_away_score}"
             
-            if is_locked:
-                st.warning("This match has already kicked off! You can no longer modify entries.")
-            else:
-                p_out = st.selectbox("1. Who will win?", ["Select outcome...", m_row['Home_Team'], m_row['Away_Team'], "Draw"])
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    p_home_score = st.number_input(f"{m_row['Home_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
-                with col2:
-                    p_away_score = st.number_input(f"{m_row['Away_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
-                    
-                predicted_score_str = f"{p_home_score}-{p_away_score}"
-                
-                if st.button("Lock Prediction In"):
-                    if p_out == "Select outcome...":
-                        st.error("Please pick a winner or select 'Draw' before submitting!")
-                    elif p_out == "Draw" and p_home_score != p_away_score:
-                        st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie!")
-                    elif p_out != "Draw" and p_home_score == p_away_score:
-                        st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
-                    elif p_out == m_row['Home_Team'] and p_home_score < p_away_score:
-                        st.error(f"❌ Validation Error: You picked {m_row['Home_Team']} to win, but your score ({predicted_score_str}) has them losing!")
-                    elif p_out == m_row['Away_Team'] and p_away_score < p_home_score:
-                        st.error(f"❌ Validation Error: You picked {m_row['Away_Team']} to win, but your score ({predicted_score_str}) has them losing!")
-                    else:
-                        try:
-                            headers = [h.strip() for h in matches_worksheet.row_values(1)]
-                            outcome_col_idx = headers.index(f"{user}_Outcome") + 1
-                            score_col_idx = headers.index(f"{user}_Score") + 1
-                            
-                            sheet_row_num = int(m_idx) + 2
-                            
-                            matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
-                            matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
-                            
-                            st.success("🔥 Prediction saved straight to the Google Sheet!")
-                            st.rerun()
-                        except Exception as write_err:
-                            st.error(f"Failed to update spreadsheet cells: {write_err}")
+            if st.button("Lock Prediction In"):
+                if is_locked:
+                    st.error("This match has already kicked off! You can no longer modify entries.")
+                elif p_out == "Select outcome...":
+                    st.error("Please pick a winner or select 'Draw' before submitting!")
+                elif p_out == "Draw" and p_home_score != p_away_score:
+                    st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie!")
+                elif p_out != "Draw" and p_home_score == p_away_score:
+                    st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
+                elif p_out == m_row['Home_Team'] and p_home_score < p_away_score:
+                    st.error(f"❌ Validation Error: You picked {m_row['Home_Team']} to win, but your score ({predicted_score_str}) has them losing!")
+                elif p_out == m_row['Away_Team'] and p_away_score < p_home_score:
+                    st.error(f"❌ Validation Error: You picked {m_row['Away_Team']} to win, but your score ({predicted_score_str}) has them losing!")
+                else:
+                    try:
+                        headers = [h.strip() for h in matches_worksheet.row_values(1)]
+                        outcome_col_idx = headers.index(f"{user}_Outcome") + 1
+                        score_col_idx = headers.index(f"{user}_Score") + 1
+                        
+                        sheet_row_num = int(m_idx) + 2
+                        
+                        matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
+                        matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
+                        
+                        st.success("🔥 Prediction saved straight to the Google Sheet!")
+                        st.rerun()
+                    except Exception as write_err:
+                        st.error(f"Failed to update spreadsheet cells: {write_err}")
 
 # --- TAB 3: ADMIN ENGINE ---
 with tab3:
