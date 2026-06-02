@@ -5,36 +5,71 @@ import pytz
 import gspread
 from google.oauth2.service_account import Credentials
 
-# Page setup - "wide" layout to prevent horizontal scrollbars
+# Page setup - wide layout to maximize workspace and kill horizontal scrollbars
 st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="wide")
 
-# Inject Custom CSS to force a clean white background theme
+# 🎨 Custom CSS Engine: Enforces strict white background and crisp, readable contrast
 st.markdown("""
     <style>
-        /* Force white background for the main app container */
+        /* 1. Base App White Background Overrides */
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
             background-color: #FFFFFF !important;
             color: #111111 !important;
         }
         
-        /* Fix text color for markdown, headers, and standard text elements */
-        h1, h2, h3, h4, h5, h6, p, label, .stMarkdown {
+        /* 2. Global Typography Visibility Controls */
+        h1, h2, h3, h4, h5, h6, p, label, span, .stMarkdown {
             color: #111111 !important;
         }
         
-        /* Make tab headers look clean on a white background */
+        /* 3. High-Contrast Buttons: Deep Royal Blue with Clean White Text */
+        div.stButton > button {
+            background-color: #0056B3 !important;
+            color: #FFFFFF !important;
+            border: 1px solid #004085 !important;
+            border-radius: 6px !important;
+            font-weight: bold !important;
+            padding: 0.6rem 1.2rem !important;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+        div.stButton > button:hover {
+            background-color: #004085 !important;
+            border-color: #002752 !important;
+            color: #FFFFFF !important;
+            transform: translateY(-1px) !important;
+        }
+        
+        /* 4. High-Contrast Form Inputs (Dropdowns, Number Toggles, Passwords) */
+        input, select, div[data-baseweb="select"], div[data-testid="stNumberInput"] input {
+            background-color: #F8F9FA !important;
+            color: #111111 !important;
+            border: 1px solid #DEE2E6 !important;
+            border-radius: 4px !important;
+        }
+        
+        /* 5. Pandas Dataframe High-Contrast Framing Panel */
+        div[data-testid="stDataFrame"], div[data-testid="stTable"] {
+            background-color: #FFFFFF !important;
+            border: 1px solid #E9ECEF !important;
+            border-radius: 8px !important;
+            padding: 10px !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+        }
+
+        /* 6. Clean Navigation Tabs on White Canvas */
         .stTabs [data-baseweb="tab-list"] {
             background-color: #FFFFFF !important;
-            border-bottom: 1px solid #E0E0E0;
+            border-bottom: 2px solid #F1F3F5;
         }
-        
         .stTabs [data-baseweb="tab"] {
-            color: #666666 !important;
+            color: #495057 !important;
+            font-weight: 500 !important;
         }
-        
         .stTabs [aria-selected="true"] {
-            color: #000000 !important;
+            color: #0056B3 !important;
             font-weight: bold !important;
+            border-bottom-color: #0056B3 !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -64,7 +99,7 @@ def get_gspread_client():
 # Initialize Client and Fetch Data Rows
 gc = get_gspread_client()
 
-# 📝 Paste your real Google Spreadsheet ID string between the quotes below!
+# Hardcoded Sheet ID Engine Link
 SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
 
 try:
@@ -88,7 +123,7 @@ try:
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
 except Exception as e:
     st.error(f"❌ Connection Blocked: Error type `{type(e).__name__}`")
-    st.info("Ensure your spreadsheet ID is correctly updated in app.py.")
+    st.info("Ensure your spreadsheet remains shared with the bot's service account email.")
     st.stop()
 
 # Clean up dataframe column headers
