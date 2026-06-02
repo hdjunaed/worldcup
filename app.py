@@ -32,6 +32,8 @@ def get_gspread_client():
 
 # Initialize Client and Fetch Data Rows
 gc = get_gspread_client()
+
+# 🚨 CRITICAL: Check this ID very closely against your browser URL string!
 SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
 
 try:
@@ -56,8 +58,25 @@ try:
     matches_df = pd.DataFrame(matches_worksheet.get_all_records())
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
 except Exception as e:
-    st.error(f"❌ Connection/Permission Blocked: {e}")
-    st.info("Ensure the service account email is added directly to your sheet's Share settings as an Editor.")
+    st.error(f"❌ Connection Blocked: Error type `{type(e).__name__}`")
+    
+    st.markdown("---")
+    st.markdown("### 🔍 Live Connection Diagnostic Engine")
+    st.info("Scanning Google Drive to see exactly what files this bot has explicit permission to open right now...")
+    
+    try:
+        visible_sheets = gc.openall()
+        if not visible_sheets:
+            st.error("⚠️ **The bot logged in successfully, but finds 0 spreadsheets.**")
+            st.write("This means Google's servers haven't applied the permission update yet, or the sheet was shared to a slightly different service account email than what is in your secrets.")
+        else:
+            st.success(f"✅ **The bot successfully found {len(visible_sheets)} spreadsheet(s) on your account:**")
+            for sheet in visible_sheets:
+                st.write(f"• 📂 **Title:** `{sheet.title}` | 🔑 **ID:** `{sheet.id}`")
+            st.info("👉 Match the ID above with the `SPREADSHEET_ID` inside your code to fix the mismatch instantly!")
+    except Exception as diag_err:
+        st.error(f"Diagnostic tool failed to search: {diag_err}")
+        
     st.stop()
 
 # Clean up dataframe column headers
@@ -158,14 +177,12 @@ with tab2:
                             st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
                         else:
                             try:
-                                # Look for header coordinates dynamically
                                 headers = [h.strip() for h in matches_worksheet.row_values(1)]
                                 outcome_col_idx = headers.index(f"{user}_Outcome") + 1
                                 score_col_idx = headers.index(f"{user}_Score") + 1
                                 
                                 sheet_row_num = int(m_idx) + 2
                                 
-                                # Push direct updates to cells
                                 matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
                                 matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
                                 
