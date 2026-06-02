@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 import gspread
+import re
 from google.oauth2.service_account import Credentials
 
 # Page setup - wide layout to maximize workspace and kill horizontal scrollbars
@@ -22,13 +23,13 @@ st.markdown("""
             color: #111111 !important;
         }
         
-        /* 3. 🟢 High-Contrast Buttons: Premium Stadium Green with Bold White Text */
+        /* 3. High-Contrast Buttons: Premium Stadium Green with Bold White Text */
         div.stButton > button {
-            background-color: #198754 !important; /* Solid vibrant soccer green */
+            background-color: #198754 !important;
             border: 1px solid #146c43 !important;
             border-radius: 8px !important;
             padding: 0.7rem 1.5rem !important;
-            width: 100% !important; /* Full width for easy clicking */
+            width: 100% !important;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08) !important;
             transition: all 0.2s ease-in-out !important;
         }
@@ -39,7 +40,7 @@ st.markdown("""
             box-shadow: 0 6px 8px rgba(0, 0, 0, 0.12) !important;
         }
         
-        /* 🔥 CRITICAL FIX: Forces text, icons, spans, and paragraphs INSIDE the button to be pure white */
+        /* Forces text inside buttons to stay crisp white */
         div.stButton > button * {
             color: #FFFFFF !important;
             font-weight: bold !important;
@@ -82,6 +83,41 @@ st.markdown("""
 
 st.title("🏆 WORLD CUP PREDICTION CHALLENGE")
 st.caption("Broadcast live on SBS | All times shown in AEST")
+
+# 🛠️ Smart Flag Parsing & Country Cleaning Engine
+def get_flag_url(text):
+    if not isinstance(text, str):
+        return ""
+    text_clean = text.strip().lower()
+    
+    # Method A: Automatically convert hidden flag emoji character pairs into ASCII country codes
+    codes = []
+    for char in text:
+        cp = ord(char)
+        if 0x1F1E6 <= cp <= 0x1F1FF:
+            codes.append(chr(cp - 0x1F1E6 + ord('a')))
+    if len(codes) >= 2:
+        return f"https://flagcdn.com/w80/{''.join(codes[:2])}.png"
+        
+    # Method B: Fallback explicit text lookup dictionary for standard tournament teams
+    flag_map = {
+        'argentina': 'ar', 'australia': 'au', 'belgium': 'be', 'brazil': 'br', 
+        'canada': 'ca', 'croatia': 'hr', 'denmark': 'dk', 'france': 'fr', 
+        'germany': 'de', 'italy': 'it', 'japan': 'jp', 'mexico': 'mx', 
+        'morocco': 'ma', 'netherlands': 'nl', 'portugal': 'pt', 'spain': 'es', 
+        'usa': 'us', 'united states': 'us', 'england': 'gb-eng', 'wales': 'gb-wls',
+        'scotland': 'gb-sct', 'saudi arabia': 'sa', 'south korea': 'kr', 'uruguay': 'uy'
+    }
+    pure_name = re.sub(r'[\U0001f1e6-\U0001f1ff\U00010000-\U0010ffff\u2600-\u27bf]', '', text_clean).strip()
+    if pure_name in flag_map:
+        return f"https://flagcdn.com/w80/{flag_map[pure_name]}.png"
+    return ""
+
+def clean_country_name(text):
+    if not isinstance(text, str):
+        return text
+    # Clean out any raw regional indicators/emojis leaving a pure name string
+    return re.sub(r'[\U0001f1e6-\U0001f1ff\U00010000-\U0010ffff\u2600-\u27bf]', '', text).strip()
 
 # Helper function to get current AEST time safely
 def get_current_aest():
@@ -168,7 +204,7 @@ with tab2:
         tomorrow = today + timedelta(days=1)
         matches_df['Kickoff_Date'] = matches_df['Kickoff_AEST'].dt.date
         
-        # 📋 1. LIVE CURRENT & FUTURE PREDICTIONS OVERVIEW
+        # 📋 1. LIVE CURRENT & FUTURE PREDICTIONS OVERVIEW WITH HIGH-CONTRAST IMAGE FLAGS
         st.markdown(f"### Your Active Predictions Overview ({user})")
         
         active_matches = matches_df[matches_df['Status'] != 'Completed'].copy()
@@ -176,33 +212,42 @@ with tab2:
         overview_rows = []
         for _, row in active_matches.iterrows():
             m_id = row['Match_ID']
-            match_name = f"{row['Home_Team']} vs {row['Away_Team']}"
             kickoff_str = row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')
             
-            # Check current saved locks
             saved_out = row.get(f'{user}_Outcome', "")
             saved_score = row.get(f'{user}_Score', "")
             
-            out_display = str(saved_out) if pd.notna(saved_out) and str(saved_out).strip() != "" else "Not Submitted Yet"
-            score_display = str(saved_score) if pd.notna(saved_score) and str(saved_score).strip() != "" else "Not Submitted Yet"
+            out_display = clean_country_name(str(saved_out)) if pd.notna(saved_out) and str(saved_out).strip() != "" else "Not Submitted"
+            score_display = str(saved_score) if pd.notna(saved_score) and str(saved_score).strip() != "" else "Not Submitted"
             
             overview_rows.append({
                 "Match ID": m_id,
-                "Fixture": match_name,
+                "🏳️ Home": get_flag_url(row['Home_Team']),
+                "Home Team": clean_country_name(row['Home_Team']),
+                "Away Team": clean_country_name(row['Away_Team']),
+                "🏳️ Away": get_flag_url(row['Away_Team']),
                 "Kickoff Time (AEST)": kickoff_str,
-                "Your Predicted Winner": out_display,
-                "Your Predicted Score": score_display
+                "Your Pick": out_display,
+                "Predicted Score": score_display
             })
             
         if overview_rows:
             overview_df = pd.DataFrame(overview_rows)
-            st.dataframe(overview_df, use_container_width=True, hide_index=True)
+            st.dataframe(
+                overview_df, 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "🏳️ Home": st.column_config.ImageColumn(""),
+                    "🏳️ Away": st.column_config.ImageColumn("")
+                }
+            )
         else:
             st.info("No active or upcoming matches listed right now.")
             
         st.divider()
         
-        # ✍️ 2. PREDICTION SUBMISSION FORM
+        # ✍️ 2. PREDICTION SUBMISSION FORM WITH INTERACTIVE FLAG TILES FOR THE KIDS
         st.markdown("### ✍️ Submit or Edit a Prediction")
         
         opening_day_1 = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
@@ -220,9 +265,9 @@ with tab2:
             ].copy()
         
         if open_matches.empty:
-            st.info("No matches scheduled for this window are open for entry updates right now.")
+            st.info("No matches scheduled for this window are open right now.")
         else:
-            match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {r['Home_Team']} vs {r['Away_Team']} ({r['Kickoff_AEST'].strftime('%d %b')})", axis=1).tolist()
+            match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {clean_country_name(r['Home_Team'])} vs {clean_country_name(r['Away_Team'])} ({r['Kickoff_AEST'].strftime('%d %b')})", axis=1).tolist()
             selected_pred_match = st.selectbox("Choose a match to log/modify:", match_options)
             
             m_id = selected_pred_match.split(":")[0].replace("Match ", "").strip()
@@ -233,13 +278,33 @@ with tab2:
             lock_status = "LOCKED" if is_locked else "Open for Changes"
             st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')} AEST ({lock_status})")
             
-            p_out = st.selectbox("1. Who will win?", ["Select outcome...", m_row['Home_Team'], m_row['Away_Team'], "Draw"])
+            # Interactive Graphic Display Area for Kids to Learn Flags
+            f_col1, f_col2, f_col3 = st.columns([2, 1, 2])
+            with f_col1:
+                home_flag = get_flag_url(m_row['Home_Team'])
+                if home_flag:
+                    st.image(home_flag, width=90)
+                st.markdown(f"### {clean_country_name(m_row['Home_Team'])}")
+            with f_col2:
+                st.markdown("<h2 style='text-align: center; margin-top: 20px;'>VS</h2>", unsafe_allow_html=True)
+            with f_col3:
+                away_flag = get_flag_url(m_row['Away_Team'])
+                if away_flag:
+                    st.image(away_flag, width=90)
+                st.markdown(f"### {clean_country_name(m_row['Away_Team'])}")
+            
+            st.write("---")
+            
+            home_clean = clean_country_name(m_row['Home_Team'])
+            away_clean = clean_country_name(m_row['Away_Team'])
+            
+            p_out = st.selectbox("1. Who will win?", ["Select outcome...", home_clean, away_clean, "Draw"])
             
             col1, col2 = st.columns(2)
             with col1:
-                p_home_score = st.number_input(f"{m_row['Home_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
+                p_home_score = st.number_input(f"{home_clean} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
             with col2:
-                p_away_score = st.number_input(f"{m_row['Away_Team']} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
+                p_away_score = st.number_input(f"{away_clean} Predicted Goals", min_value=0, max_value=20, step=1, value=0)
                 
             predicted_score_str = f"{p_home_score}-{p_away_score}"
             
@@ -252,10 +317,10 @@ with tab2:
                     st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie!")
                 elif p_out != "Draw" and p_home_score == p_away_score:
                     st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
-                elif p_out == m_row['Home_Team'] and p_home_score < p_away_score:
-                    st.error(f"❌ Validation Error: You picked {m_row['Home_Team']} to win, but your score ({predicted_score_str}) has them losing!")
-                elif p_out == m_row['Away_Team'] and p_away_score < p_home_score:
-                    st.error(f"❌ Validation Error: You picked {m_row['Away_Team']} to win, but your score ({predicted_score_str}) has them losing!")
+                elif p_out == home_clean and p_home_score < p_away_score:
+                    st.error(f"❌ Validation Error: You picked {home_clean} to win, but your score ({predicted_score_str}) has them losing!")
+                elif p_out == away_clean and p_away_score < p_home_score:
+                    st.error(f"❌ Validation Error: You picked {away_clean} to win, but your score ({predicted_score_str}) has them losing!")
                 else:
                     try:
                         headers = [h.strip() for h in matches_worksheet.row_values(1)]
@@ -264,7 +329,10 @@ with tab2:
                         
                         sheet_row_num = int(m_idx) + 2
                         
-                        matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
+                        # Match options inside the sheets match raw inputs exactly
+                        sheet_outcome_val = m_row['Home_Team'] if p_out == home_clean else (m_row['Away_Team'] if p_out == away_clean else "Draw")
+                        
+                        matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, sheet_outcome_val)
                         matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
                         
                         st.success("Prediction saved straight to the Google Sheet!")
@@ -284,7 +352,7 @@ with tab3:
         if active_matches.empty:
             st.info("All matches finalized!")
         else:
-            match_options = active_matches.apply(lambda r: f"Match {r['Match_ID']}: {r['Home_Team']} vs {r['Away_Team']}", axis=1).tolist()
+            match_options = active_matches.apply(lambda r: f"Match {r['Match_ID']}: {clean_country_name(r['Home_Team'])} vs {clean_country_name(r['Away_Team'])}", axis=1).tolist()
             selected_match_str = st.selectbox("Select match to calculate points:", match_options)
             
             selected_id = selected_match_str.split(":")[0].replace("Match ", "").strip()
@@ -293,20 +361,20 @@ with tab3:
             st.markdown("### 1. Enter Actual Match Result")
             col1, col2 = st.columns(2)
             with col1:
-                act_home = st.number_input(f"{match_row['Home_Team']} Score", min_value=0, step=1, value=0, key="ah")
+                act_home = st.number_input(f"{clean_country_name(match_row['Home_Team'])} Score", min_value=0, step=1, value=0, key="ah")
             with col2:
-                act_away = st.number_input(f"{match_row['Away_Team']} Score", min_value=0, step=1, value=0, key="aa")
+                act_away = st.number_input(f"{clean_country_name(match_row['Away_Team'])} Score", min_value=0, step=1, value=0, key="aa")
             
             if act_home > act_away:
-                actual_outcome = str(match_row['Home_Team'])
+                actual_outcome = str(match_row['Home_Team']).strip()
             elif act_away > act_home:
-                actual_outcome = str(match_row['Away_Team'])
+                actual_outcome = str(match_row['Away_Team']).strip()
             else:
                 actual_outcome = "Draw"
                 
             actual_score_str = f"{act_home}-{act_away}"
             
-            st.write(f"**Calculated Reality:** Outcome = `{actual_outcome}`, Score = `{actual_score_str}`")
+            st.write(f"**Calculated Reality:** Outcome = `{clean_country_name(actual_outcome)}`, Score = `{actual_score_str}`")
             st.divider()
             
             st.markdown("### Points Calculations for Spreadsheet:")
@@ -322,9 +390,9 @@ with tab3:
                 score_correct = (p_score == actual_score_str)
                 
                 if outcome_correct and score_correct:
-                    st.success(f"Winner! {p} got BOTH right! Outcome: {p_out} | Score: {p_score} — Award +20 Points!")
+                    st.success(f"Winner! {p} got BOTH right! Outcome: {clean_country_name(p_out)} | Score: {p_score} — Award +20 Points!")
                 elif outcome_correct:
-                    st.info(f"Good job! {p} got the Winner/Draw RIGHT ({p_out}), but score wrong — Award +10 Points!")
+                    st.info(f"Good job! {p} got the Winner/Draw RIGHT ({clean_country_name(p_out)}), but score wrong — Award +10 Points!")
                 else:
                     st.write(f"{p} got 0 points.")
                     
