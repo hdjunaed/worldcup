@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz
@@ -9,21 +10,19 @@ st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="c
 st.title("🏆 WORLD CUP PREDICTION CHALLENGE")
 st.caption("Broadcast live on SBS | All times shown in AEST")
 
-# Directly link the public Google Sheet CSV export URLs
-SHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
-MATCHES_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Matches"
-LEADERBOARD_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Leaderboard"
+# Initialize secure connection tool
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # Helper function to get current AEST time safely
 def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
-# Load Data Safely
+# Load Data Safely using the secure connection
 try:
-    matches_df = pd.read_csv(MATCHES_URL)
-    leaderboard_df = pd.read_csv(LEADERBOARD_URL)
+    matches_df = conn.read(worksheet="Matches", ttl=0)
+    leaderboard_df = conn.read(worksheet="Leaderboard", ttl=0)
 except Exception as e:
-    st.error("Could not read data from Google Sheets. Make sure 'Anyone with the link' is set to Editor/Viewer in your Share settings.")
+    st.error("Connecting to prediction database... Please verify your Streamlit Cloud Secrets block.")
     st.stop()
 
 # Clean up column names
@@ -66,19 +65,16 @@ with tab2:
         
         matches_df['Kickoff_Date'] = matches_df['Kickoff_AEST'].dt.date
         
-        # Define the tournament opening days based on your sheet dates
+        # Opening days evaluation parameters
         opening_day_1 = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
         opening_day_2 = datetime.strptime("2026-06-13", "%Y-%m-%d").date()
         
-        # Smart Filter Engine
         if today < opening_day_1:
-            # HYPE PHASE: If tournament hasn't started yet, reveal Day 1 and Day 2 early
             open_matches = matches_df[
                 (matches_df['Status'] != 'Completed') & 
                 (matches_df['Kickoff_Date'].isin([opening_day_1, opening_day_2]))
             ].copy()
         else:
-            # LIVE PHASE: Rolling today and tomorrow logic
             open_matches = matches_df[
                 (matches_df['Status'] != 'Completed') & 
                 (matches_df['Kickoff_Date'].isin([today, tomorrow]))
@@ -91,11 +87,11 @@ with tab2:
             selected_pred_match = st.selectbox("Choose an upcoming match:", match_options)
             
             m_id = selected_pred_match.split(":")[0].replace("Match ", "").strip()
-            m_row = matches_df[matches_df['Match_ID'] == m_id].iloc[0]
+            m_idx = matches_df[matches_df['Match_ID'] == m_id].index[0]
+            m_row = matches_df.loc[m_idx]
             
-            # Show kickoff status
             is_locked = current_time >= m_row['Kickoff_AEST']
-            lock_status = "🔒 LOCKED (Match Started)" if is_locked else "⏳ Open for Predictions"
+            lock_status = "🔒 LOCKED" if is_locked else "⏳ Open for Predictions"
             st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')} AEST ({lock_status})")
             
             existing_out = str(m_row[f'{user}_Outcome']) if f'{user}_Outcome' in matches_df.columns and pd.notna(m_row[f'{user}_Outcome']) else "None"
@@ -105,9 +101,8 @@ with tab2:
             st.divider()
             
             if is_locked:
-                st.warning("This match has already kicked off! You can no longer submit or edit predictions for it.")
+                st.warning("This match has already kicked off! You can no longer modify entries.")
             else:
-                # Dropdowns for clean selection
                 p_out = st.selectbox("1. Who will win?", ["Select outcome...", m_row['Home_Team'], m_row['Away_Team'], "Draw"])
                 
                 col1, col2 = st.columns(2)
@@ -118,19 +113,28 @@ with tab2:
                     
                 predicted_score_str = f"{p_home_score}-{p_away_score}"
                 
-                if st.button("Validate & Lock Prediction"):
+                if st.button("Lock Prediction In"):
                     if p_out == "Select outcome...":
                         st.error("Please pick a winner or select 'Draw' before submitting!")
                     else:
                         # --- DRAW VALIDATION CHECKS ---
                         if p_out == "Draw" and p_home_score != p_away_score:
-                            st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie! Please update your choices.")
+                            st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie!")
                         elif p_out != "Draw" and p_home_score == p_away_score:
-                            st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome! Please update your choices.")
+                            st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
                         else:
-                            st.success("✅ Prediction Validated! Copy and paste these exact values into the Google Sheet columns:")
-                            st.code(f"For column {user}_Outcome: {p_out}\nFor column {user}_Score: {predicted_score_str}")
-                            st.warning("Note: Enter these values into your row in the shared Google Sheet to lock it in.")
+                            # Modify the internal dataframe layout
+                            matches_df.at[m_idx, f'{user}_Outcome'] = p_out
+                            matches_df.at[m_idx, f'{user}_Score'] = predicted_score_str
+                            
+                            # Drop the temporary date column before saving back to sheets
+                            if 'Kickoff_Date' in matches_df.columns:
+                                matches_df = matches_df.drop(columns=['Kickoff_Date'])
+                            
+                            # Push updates straight back to Google Sheets database live
+                            conn.update(worksheet="Matches", data=matches_df)
+                            st.success("🔥 Prediction validated and saved straight to the Google Sheet!")
+                            st.rerun()
 
 # --- TAB 3: ADMIN ENGINE ---
 with tab3:
