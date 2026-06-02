@@ -170,26 +170,29 @@ with tab2:
                 if st.button("Lock Prediction In"):
                     if p_out == "Select outcome...":
                         st.error("Please pick a winner or select 'Draw' before submitting!")
+                    elif p_out == "Draw" and p_home_score != p_away_score:
+                        st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie!")
+                    elif p_out != "Draw" and p_home_score == p_away_score:
+                        st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
+                    elif p_out == m_row['Home_Team'] and p_home_score < p_away_score:
+                        st.error(f"❌ Validation Error: You picked {m_row['Home_Team']} to win, but your score ({predicted_score_str}) has them losing!")
+                    elif p_out == m_row['Away_Team'] and p_away_score < p_home_score:
+                        st.error(f"❌ Validation Error: You picked {m_row['Away_Team']} to win, but your score ({predicted_score_str}) has them losing!")
                     else:
-                        if p_out == "Draw" and p_home_score != p_away_score:
-                            st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie!")
-                        elif p_out != "Draw" and p_home_score == p_away_score:
-                            st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
-                        else:
-                            try:
-                                headers = [h.strip() for h in matches_worksheet.row_values(1)]
-                                outcome_col_idx = headers.index(f"{user}_Outcome") + 1
-                                score_col_idx = headers.index(f"{user}_Score") + 1
-                                
-                                sheet_row_num = int(m_idx) + 2
-                                
-                                matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
-                                matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
-                                
-                                st.success("🔥 Prediction saved straight to the Google Sheet!")
-                                st.rerun()
-                            except Exception as write_err:
-                                st.error(f"Failed to update spreadsheet cells: {write_err}")
+                        try:
+                            headers = [h.strip() for h in matches_worksheet.row_values(1)]
+                            outcome_col_idx = headers.index(f"{user}_Outcome") + 1
+                            score_col_idx = headers.index(f"{user}_Score") + 1
+                            
+                            sheet_row_num = int(m_idx) + 2
+                            
+                            matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
+                            matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
+                            
+                            st.success("🔥 Prediction saved straight to the Google Sheet!")
+                            st.rerun()
+                        except Exception as write_err:
+                            st.error(f"Failed to update spreadsheet cells: {write_err}")
 
 # --- TAB 3: ADMIN ENGINE ---
 with tab3:
