@@ -3,13 +3,52 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 import gspread
+import re
 from google.oauth2.service_account import Credentials
 
-# Page setup for modern mobile responsiveness
-st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="centered")
+# 1. Page setup changed to "wide" to prevent horizontal scrollbars
+st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="wide")
+
+# 2. Inject Custom CSS to force a clean white background theme
+st.markdown("""
+    <style>
+        /* Force white background for the main app container */
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+            background-color: #FFFFFF !important;
+            color: #111111 !important;
+        }
+        
+        /* Fix text color for markdown, headers, and standard text elements */
+        h1, h2, h3, h4, h5, h6, p, label, .stMarkdown {
+            color: #111111 !important;
+        }
+        
+        /* Make tab headers look clean on a white background */
+        .stTabs [data-baseweb="tab-list"] {
+            background-color: #FFFFFF !important;
+            border-bottom: 1px solid #E0E0E0;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            color: #666666 !important;
+        }
+        
+        .stTabs [aria-selected="true"] {
+            color: #000000 !important;
+            font-weight: bold !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("🏆 WORLD CUP PREDICTION CHALLENGE")
 st.caption("Broadcast live on SBS | All times shown in AEST")
+
+# Helper function to remove flags/emojis from country names automatically
+def clean_country_name(text):
+    if not isinstance(text, str):
+        return text
+    # Strip out emoji character ranges (including flags)
+    return re.sub(r'[\U00010000-\U0010ffff\u2600-\u27bf]', '', text).strip()
 
 # Helper function to get current AEST time safely
 def get_current_aest():
@@ -33,7 +72,7 @@ def get_gspread_client():
 # Initialize Client and Fetch Data Rows
 gc = get_gspread_client()
 
-# 📝 NOTE: Make sure your real Google Spreadsheet ID string is pasted between the quotes below!
+# 📝 Put your real Google Spreadsheet ID string between the quotes below:
 SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
 
 try:
@@ -57,12 +96,18 @@ try:
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
 except Exception as e:
     st.error(f"❌ Connection Blocked: Error type `{type(e).__name__}`")
-    st.info("Check that the Google Sheets and Google Drive APIs are enabled in your Google Cloud Console.")
+    st.info("Ensure your spreadsheet ID is correctly updated in app.py line 61.")
     st.stop()
 
 # Clean up dataframe column headers
 matches_df.columns = matches_df.columns.str.strip()
 leaderboard_df.columns = leaderboard_df.columns.str.strip()
+
+# Clean flag emojis out of Home and Away team columns if they exist
+if 'Home_Team' in matches_df.columns:
+    matches_df['Home_Team'] = matches_df['Home_Team'].apply(clean_country_name)
+if 'Away_Team' in matches_df.columns:
+    matches_df['Away_Team'] = matches_df['Away_Team'].apply(clean_country_name)
 
 # Ensure types are correct
 matches_df['Match_ID'] = matches_df['Match_ID'].astype(str)
@@ -76,9 +121,6 @@ with tab1:
     st.subheader("Current Standings")
     leaderboard_sorted = leaderboard_df.sort_values(by="Points", ascending=False).reset_index(drop=True)
     
-    if not leaderboard_sorted.empty and leaderboard_sorted.loc[0, 'Points'] > 0:
-        leaderboard_sorted.loc[0, 'Participant'] = "🥇 " + leaderboard_sorted.loc[0, 'Participant']
-        
     st.dataframe(
         leaderboard_sorted, 
         use_container_width=True, 
@@ -100,9 +142,8 @@ with tab2:
         matches_df['Kickoff_Date'] = matches_df['Kickoff_AEST'].dt.date
         
         # 📋 1. LIVE CURRENT & FUTURE PREDICTIONS OVERVIEW
-        st.markdown(f"### 📊 Your Active Predictions Overview ({user})")
+        st.markdown(f"### Your Active Predictions Overview ({user})")
         
-        # Filter down to only non-completed games (current and future)
         active_matches = matches_df[matches_df['Status'] != 'Completed'].copy()
         
         overview_rows = []
@@ -115,8 +156,8 @@ with tab2:
             saved_out = row.get(f'{user}_Outcome', "")
             saved_score = row.get(f'{user}_Score', "")
             
-            out_display = f"🟢 {saved_out}" if pd.notna(saved_out) and str(saved_out).strip() != "" else "❌ Not Submitted Yet"
-            score_display = f"🔢 {saved_score}" if pd.notna(saved_score) and str(saved_score).strip() != "" else "❌ Not Submitted Yet"
+            out_display = clean_country_name(str(saved_out)) if pd.notna(saved_out) and str(saved_out).strip() != "" else "Not Submitted Yet"
+            score_display = str(saved_score) if pd.notna(saved_score) and str(saved_score).strip() != "" else "Not Submitted Yet"
             
             overview_rows.append({
                 "Match ID": m_id,
@@ -137,7 +178,6 @@ with tab2:
         # ✍️ 2. PREDICTION SUBMISSION FORM
         st.markdown("### ✍️ Submit or Edit a Prediction")
         
-        # Opening days evaluation window parameters
         opening_day_1 = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
         opening_day_2 = datetime.strptime("2026-06-13", "%Y-%m-%d").date()
         
@@ -163,7 +203,7 @@ with tab2:
             m_row = matches_df.loc[m_idx]
             
             is_locked = current_time >= m_row['Kickoff_AEST']
-            lock_status = "🔒 LOCKED" if is_locked else "⏳ Open for Changes"
+            lock_status = "LOCKED" if is_locked else "Open for Changes"
             st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')} AEST ({lock_status})")
             
             p_out = st.selectbox("1. Who will win?", ["Select outcome...", m_row['Home_Team'], m_row['Away_Team'], "Draw"])
@@ -200,7 +240,7 @@ with tab2:
                         matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
                         matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
                         
-                        st.success("🔥 Prediction saved straight to the Google Sheet!")
+                        st.success("Prediction saved straight to the Google Sheet!")
                         st.rerun()
                     except Exception as write_err:
                         st.error(f"Failed to update spreadsheet cells: {write_err}")
@@ -211,7 +251,7 @@ with tab3:
     admin_password = st.text_input("Enter Password", type="password")
     
     if admin_password == "kmart20":
-        st.success("Welcome back, HD.")
+        st.success("Welcome back.")
         active_matches = matches_df[matches_df['Status'] != 'Completed']
         
         if active_matches.empty:
@@ -242,25 +282,25 @@ with tab3:
             st.write(f"**Calculated Reality:** Outcome = `{actual_outcome}`, Score = `{actual_score_str}`")
             st.divider()
             
-            st.markdown("### 🧮 Points Calculations for HD to update in Sheet:")
+            st.markdown("### Points Calculations for Spreadsheet:")
             
             for p in participants:
                 p_out_col = f'{p}_Outcome'
                 p_score_col = f'{p}_Score'
                 
-                p_out = str(match_row[p_out_col]).strip() if p_out_col in matches_df.columns and pd.notna(match_row[p_out_col]) else ""
+                p_out = clean_country_name(str(match_row[p_out_col])).strip() if p_out_col in matches_df.columns and pd.notna(match_row[p_out_col]) else ""
                 p_score = str(match_row[p_score_col]).strip() if p_score_col in matches_df.columns and pd.notna(match_row[p_score_col]) else ""
                 
                 outcome_correct = (p_out.lower() == actual_outcome.lower())
                 score_correct = (p_score == actual_score_str)
                 
                 if outcome_correct and score_correct:
-                    st.success(f"🔥 **{p}** got BOTH right! Outcome: {p_out} | Score: {p_score} — **Award +20 Points!**")
+                    st.success(f"Winner! {p} got BOTH right! Outcome: {p_out} | Score: {p_score} — Award +20 Points!")
                 elif outcome_correct:
-                    st.info(f"👍 **{p}** got the Winner/Draw RIGHT (`{p_out}`), but score wrong — **Award +10 Points!**")
+                    st.info(f"Good job! {p} got the Winner/Draw RIGHT ({p_out}), but score wrong — Award +10 Points!")
                 else:
-                    st.write(f"❌ {p} got 0 points.")
+                    st.write(f"{p} got 0 points.")
                     
-            st.info("📌 **Next Step:** Manually update your Google Sheet 'Leaderboard' tab with these points, set the match 'Status' to 'Completed', and you're good to go!")
+            st.info("📌 Next Step: Manually update your Google Sheet 'Leaderboard' tab with these points, set the match 'Status' to 'Completed', and you're good to go!")
     elif admin_password:
         st.error("Incorrect password.")
