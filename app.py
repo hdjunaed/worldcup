@@ -64,17 +64,30 @@ with tab2:
         today = current_time.date()
         tomorrow = today + timedelta(days=1)
         
-        # Filter matches: Status is not Completed AND Kickoff is either Today or Tomorrow
         matches_df['Kickoff_Date'] = matches_df['Kickoff_AEST'].dt.date
-        open_matches = matches_df[
-            (matches_df['Status'] != 'Completed') & 
-            (matches_df['Kickoff_Date'].isin([today, tomorrow]))
-        ].copy()
+        
+        # Define the tournament opening days based on your sheet dates
+        opening_day_1 = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
+        opening_day_2 = datetime.strptime("2026-06-13", "%Y-%m-%d").date()
+        
+        # Smart Filter Engine
+        if today < opening_day_1:
+            # HYPE PHASE: If tournament hasn't started yet, reveal Day 1 and Day 2 early
+            open_matches = matches_df[
+                (matches_df['Status'] != 'Completed') & 
+                (matches_df['Kickoff_Date'].isin([opening_day_1, opening_day_2]))
+            ].copy()
+        else:
+            # LIVE PHASE: Rolling today and tomorrow logic
+            open_matches = matches_df[
+                (matches_df['Status'] != 'Completed') & 
+                (matches_df['Kickoff_Date'].isin([today, tomorrow]))
+            ].copy()
         
         if open_matches.empty:
-            st.info("No matches scheduled for today or tomorrow are available for prediction.")
+            st.info("No matches scheduled right now are available for prediction.")
         else:
-            match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {r['Home_Team']} vs {r['Away_Team']}", axis=1).tolist()
+            match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {r['Home_Team']} vs {r['Away_Team']} ({r['Kickoff_AEST'].strftime('%d %b')})", axis=1).tolist()
             selected_pred_match = st.selectbox("Choose an upcoming match:", match_options)
             
             m_id = selected_pred_match.split(":")[0].replace("Match ", "").strip()
@@ -85,7 +98,6 @@ with tab2:
             lock_status = "🔒 LOCKED (Match Started)" if is_locked else "⏳ Open for Predictions"
             st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')} AEST ({lock_status})")
             
-            # Fixed the typo here: replaced stray '{p}_Score' with '{user}_Score'
             existing_out = str(m_row[f'{user}_Outcome']) if f'{user}_Outcome' in matches_df.columns and pd.notna(m_row[f'{user}_Outcome']) else "None"
             existing_score = str(m_row[f'{user}_Score']) if f'{user}_Score' in matches_df.columns and pd.notna(m_row[f'{user}_Score']) else "None"
             
