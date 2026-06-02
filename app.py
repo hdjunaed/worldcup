@@ -16,24 +16,18 @@ def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
 # 🔐 Establish Direct Google Sheets Connection Engine
-@st.cache_resource(ttl=3600)  # Cache connection for 1 hour to stay fast
+@st.cache_resource(ttl=3)  # Low TTL during configuration testing
 def get_gspread_client():
     try:
-        # Pull raw configuration directly from Streamlit secrets
         secret_info = st.secrets["connections"]["gsheets"]
-        
-        # Define security clearance scopes
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        
-        # Build credentials dynamically
         credentials = Credentials.from_service_account_info(secret_info, scopes=scopes)
         return gspread.authorize(credentials)
     except Exception as e:
         st.error(f"❌ Google Authentication Failed: {e}")
-        st.info("Check that your Streamlit Secrets contain all required keys inside [connections.gsheets].")
         st.stop()
 
 # Initialize Client and Fetch Data Rows
@@ -43,21 +37,30 @@ SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
 try:
     sh = gc.open_by_key(SPREADSHEET_ID)
     
-    # Read Matches Worksheet
-    matches_worksheet = sh.worksheet("Matches")
-    matches_data = matches_worksheet.get_all_records()
-    matches_df = pd.DataFrame(matches_data)
+    # Dynamic worksheet finder that ignores trailing/leading spaces
+    all_worksheets = {ws.title.strip().lower(): ws for ws in sh.worksheets()}
     
-    # Read Leaderboard Worksheet
-    leaderboard_worksheet = sh.worksheet("Leaderboard")
-    leaderboard_data = leaderboard_worksheet.get_all_records()
-    leaderboard_df = pd.DataFrame(leaderboard_data)
+    if "matches" in all_worksheets:
+        matches_worksheet = all_worksheets["matches"]
+    else:
+        st.error("❌ Could not find a tab named 'Matches' in your spreadsheet.")
+        st.stop()
+        
+    if "leaderboard" in all_worksheets:
+        leaderboard_worksheet = all_worksheets["leaderboard"]
+    else:
+        st.error("❌ Could not find a tab named 'Leaderboard' in your spreadsheet.")
+        st.stop()
+
+    # Pull datasets into memory
+    matches_df = pd.DataFrame(matches_worksheet.get_all_records())
+    leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
 except Exception as e:
-    st.error(f"❌ Failed to read worksheet tabs: {e}")
-    st.info("Ensure that you have shared your Google Sheet with the service account email as an Editor.")
+    st.error(f"❌ Connection/Permission Blocked: {e}")
+    st.info("Ensure the service account email is added directly to your sheet's Share settings as an Editor.")
     st.stop()
 
-# Clean up column names
+# Clean up dataframe column headers
 matches_df.columns = matches_df.columns.str.strip()
 leaderboard_df.columns = leaderboard_df.columns.str.strip()
 
@@ -154,20 +157,19 @@ with tab2:
                         elif p_out != "Draw" and p_home_score == p_away_score:
                             st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
                         else:
-                            # 📝 Step A: Determine the exact coordinate column to write to
                             try:
-                                outcome_col_idx = matches_worksheet.find(f"{user}_Outcome").col
-                                score_col_idx = matches_worksheet.find(f"{user}_Score").col
+                                # Look for header coordinates dynamically
+                                headers = [h.strip() for h in matches_worksheet.row_values(1)]
+                                outcome_col_idx = headers.index(f"{user}_Outcome") + 1
+                                score_col_idx = headers.index(f"{user}_Score") + 1
                                 
-                                # Google Sheets row index is DataFrame index + 2 (1-based index + header row)
                                 sheet_row_num = int(m_idx) + 2
                                 
-                                # 📝 Step B: Directly update those two precise cells live
+                                # Push direct updates to cells
                                 matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
                                 matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
                                 
                                 st.success("🔥 Prediction saved straight to the Google Sheet!")
-                                st.cache_resource.clear()  # Clear cache to display immediate update
                                 st.rerun()
                             except Exception as write_err:
                                 st.error(f"Failed to update spreadsheet cells: {write_err}")
