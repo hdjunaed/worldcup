@@ -34,7 +34,7 @@ def get_gspread_client():
 gc = get_gspread_client()
 
 # 📝 NOTE: Make sure your real Google Spreadsheet ID string is pasted between the quotes below!
-SPREADSHEET_ID = "YOUR_ACTUAL_SPREADSHEET_ID_HERE"
+SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
 
 try:
     sh = gc.open_by_key(SPREADSHEET_ID)
