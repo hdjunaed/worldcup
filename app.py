@@ -22,22 +22,28 @@ st.markdown("""
             color: #111111 !important;
         }
         
-        /* 3. High-Contrast Buttons: Deep Royal Blue with Clean White Text */
+        /* 3. 🟢 High-Contrast Buttons: Premium Stadium Green with Bold White Text */
         div.stButton > button {
-            background-color: #0056B3 !important;
-            color: #FFFFFF !important;
-            border: 1px solid #004085 !important;
-            border-radius: 6px !important;
-            font-weight: bold !important;
-            padding: 0.6rem 1.2rem !important;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+            background-color: #198754 !important; /* Solid vibrant soccer green */
+            border: 1px solid #146c43 !important;
+            border-radius: 8px !important;
+            padding: 0.7rem 1.5rem !important;
+            width: 100% !important; /* Full width for easy clicking */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08) !important;
             transition: all 0.2s ease-in-out !important;
         }
         div.stButton > button:hover {
-            background-color: #004085 !important;
-            border-color: #002752 !important;
-            color: #FFFFFF !important;
+            background-color: #146c43 !important;
+            border-color: #0f5132 !important;
             transform: translateY(-1px) !important;
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.12) !important;
+        }
+        
+        /* 🔥 CRITICAL FIX: Forces text, icons, spans, and paragraphs INSIDE the button to be pure white */
+        div.stButton > button * {
+            color: #FFFFFF !important;
+            font-weight: bold !important;
+            font-size: 1.05rem !important;
         }
         
         /* 4. High-Contrast Form Inputs (Dropdowns, Number Toggles, Passwords) */
@@ -67,9 +73,9 @@ st.markdown("""
             font-weight: 500 !important;
         }
         .stTabs [aria-selected="true"] {
-            color: #0056B3 !important;
+            color: #198754 !important;
             font-weight: bold !important;
-            border-bottom-color: #0056B3 !important;
+            border-bottom-color: #198754 !important;
         }
     </style>
 """, unsafe_allow_html=True)
