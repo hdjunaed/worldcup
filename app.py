@@ -1,8 +1,9 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz
+import gspread
+from google.oauth2.service_account import Credentials
 
 # Page setup for modern mobile responsiveness
 st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="centered")
@@ -10,19 +11,50 @@ st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="c
 st.title("🏆 WORLD CUP PREDICTION CHALLENGE")
 st.caption("Broadcast live on SBS | All times shown in AEST")
 
-# Initialize secure connection tool
-conn = st.connection("gsheets", type=GSheetsConnection)
-
 # Helper function to get current AEST time safely
 def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
-# Load Data Safely using the secure connection
+# 🔐 Establish Direct Google Sheets Connection Engine
+@st.cache_resource(ttl=3600)  # Cache connection for 1 hour to stay fast
+def get_gspread_client():
+    try:
+        # Pull raw configuration directly from Streamlit secrets
+        secret_info = st.secrets["connections"]["gsheets"]
+        
+        # Define security clearance scopes
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        # Build credentials dynamically
+        credentials = Credentials.from_service_account_info(secret_info, scopes=scopes)
+        return gspread.authorize(credentials)
+    except Exception as e:
+        st.error(f"❌ Google Authentication Failed: {e}")
+        st.info("Check that your Streamlit Secrets contain all required keys inside [connections.gsheets].")
+        st.stop()
+
+# Initialize Client and Fetch Data Rows
+gc = get_gspread_client()
+SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
+
 try:
-    matches_df = conn.read(worksheet="Matches", ttl=0)
-    leaderboard_df = conn.read(worksheet="Leaderboard", ttl=0)
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    
+    # Read Matches Worksheet
+    matches_worksheet = sh.worksheet("Matches")
+    matches_data = matches_worksheet.get_all_records()
+    matches_df = pd.DataFrame(matches_data)
+    
+    # Read Leaderboard Worksheet
+    leaderboard_worksheet = sh.worksheet("Leaderboard")
+    leaderboard_data = leaderboard_worksheet.get_all_records()
+    leaderboard_df = pd.DataFrame(leaderboard_data)
 except Exception as e:
-    st.error("Connecting to prediction database... Please verify your Streamlit Cloud Secrets block.")
+    st.error(f"❌ Failed to read worksheet tabs: {e}")
+    st.info("Ensure that you have shared your Google Sheet with the service account email as an Editor.")
     st.stop()
 
 # Clean up column names
@@ -117,24 +149,28 @@ with tab2:
                     if p_out == "Select outcome...":
                         st.error("Please pick a winner or select 'Draw' before submitting!")
                     else:
-                        # --- DRAW VALIDATION CHECKS ---
                         if p_out == "Draw" and p_home_score != p_away_score:
                             st.error(f"❌ Validation Error: You selected 'Draw', but your score prediction ({predicted_score_str}) is not a tie!")
                         elif p_out != "Draw" and p_home_score == p_away_score:
                             st.error(f"❌ Validation Error: You predicted a tie score ({predicted_score_str}), but did not select 'Draw' as the outcome!")
                         else:
-                            # Modify the internal dataframe layout
-                            matches_df.at[m_idx, f'{user}_Outcome'] = p_out
-                            matches_df.at[m_idx, f'{user}_Score'] = predicted_score_str
-                            
-                            # Drop the temporary date column before saving back to sheets
-                            if 'Kickoff_Date' in matches_df.columns:
-                                matches_df = matches_df.drop(columns=['Kickoff_Date'])
-                            
-                            # Push updates straight back to Google Sheets database live
-                            conn.update(worksheet="Matches", data=matches_df)
-                            st.success("🔥 Prediction validated and saved straight to the Google Sheet!")
-                            st.rerun()
+                            # 📝 Step A: Determine the exact coordinate column to write to
+                            try:
+                                outcome_col_idx = matches_worksheet.find(f"{user}_Outcome").col
+                                score_col_idx = matches_worksheet.find(f"{user}_Score").col
+                                
+                                # Google Sheets row index is DataFrame index + 2 (1-based index + header row)
+                                sheet_row_num = int(m_idx) + 2
+                                
+                                # 📝 Step B: Directly update those two precise cells live
+                                matches_worksheet.update_cell(sheet_row_num, outcome_col_idx, p_out)
+                                matches_worksheet.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
+                                
+                                st.success("🔥 Prediction saved straight to the Google Sheet!")
+                                st.cache_resource.clear()  # Clear cache to display immediate update
+                                st.rerun()
+                            except Exception as write_err:
+                                st.error(f"Failed to update spreadsheet cells: {write_err}")
 
 # --- TAB 3: ADMIN ENGINE ---
 with tab3:
@@ -161,7 +197,6 @@ with tab3:
             with col2:
                 act_away = st.number_input(f"{match_row['Away_Team']} Score", min_value=0, step=1, value=0, key="aa")
             
-            # Determine Actual Outcome
             if act_home > act_away:
                 actual_outcome = str(match_row['Home_Team'])
             elif act_away > act_home:
