@@ -21,15 +21,47 @@ st.markdown("""
             color: #111111 !important;
         }
         
-        /* 2. Sidebar Restyling for Rolling News Canvas */
-        [data-testid="stSidebar"] {
-            background-color: #F8F9FA !important;
-            border-right: 1px solid #E9ECEF !important;
-        }
-        
-        /* 3. Global Typography Visibility Controls */
+        /* 2. Global Typography Visibility Controls */
         h1, h2, h3, h4, h5, h6, p, label, span, .stMarkdown {
             color: #111111 !important;
+        }
+        
+        /* 3. Horizontal Premium Ticker Canvas (Top of Page) */
+        .ticker-wrap {
+            width: 100%;
+            background-color: #198754 !important;
+            overflow: hidden;
+            height: 38px;
+            padding-left: 100%;
+            box-sizing: content-box;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            display: flex;
+            align-items: center;
+        }
+        
+        @keyframes marquee {
+            0% { transform: translate3d(0, 0, 0); }
+            100% { transform: translate3d(-100%, 0, 0); }
+        }
+        
+        .ticker-content {
+            display: inline-block;
+            white-space: nowrap;
+            padding-right: 100%;
+            animation-iteration-count: infinite;
+            animation-timing-function: linear;
+            animation-name: marquee;
+            animation-duration: 35s;
+        }
+        
+        /* Crucial: Override the global #111111 text color rule inside the ticker banner */
+        .ticker-content span {
+            color: #FFFFFF !important;
+            font-weight: 600 !important;
+            font-size: 0.92rem !important;
+            letter-spacing: 0.5px;
         }
         
         /* 4. High-Contrast Buttons: Premium Stadium Green with Bold White Text */
@@ -55,7 +87,7 @@ st.markdown("""
             font-size: 1.05rem !important;
         }
         
-        /* 5. High-Contrast Form Inputs (Dropdowns, Number Toggles, Passwords) */
+        /* 5. High-Contrast Form Inputs */
         input, select, div[data-baseweb="select"], div[data-testid="stNumberInput"] input {
             background-color: #F8F9FA !important;
             color: #111111 !important;
@@ -95,92 +127,53 @@ st.markdown("""
             padding: 15px;
             margin-bottom: 20px;
         }
-        
-        /* 9. Live News Component Cards */
-        .news-card {
-            background-color: #FFFFFF;
-            border-left: 4px solid #198754;
-            padding: 12px;
-            margin-bottom: 12px;
-            border-radius: 0px 6px 6px 0px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        }
-        .news-title {
-            font-weight: bold;
-            font-size: 0.95rem;
-            color: #111111 !important;
-            margin-bottom: 4px;
-            line-height: 1.3;
-        }
-        .news-desc {
-            font-size: 0.82rem;
-            color: #555555 !important;
-            line-height: 1.4;
-            margin-bottom: 6px;
-        }
-        .news-link {
-            font-size: 0.8rem;
-            color: #198754 !important;
-            text-decoration: none;
-            font-weight: 600;
-        }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏆 WORLD CUP PREDICTION CHALLENGE")
-st.caption("Broadcast live on SBS | All times shown in AEST")
-
-# 📡 LIVE ROLLING NEWS ENGINE (RSS FETCH AND XML PARSING)
-@st.cache_data(ttl=900)  # Caches news results for 15 minutes to save bandwidth
-def fetch_rolling_news():
-    # Utilizing an open, high-frequency public football RSS news stream
-    rss_url = "https://www.skysports.com/rss/12040"  
+# 📡 LIVE WORLD CUP NEWS TICKER ENGINE
+@st.cache_data(ttl=900)
+def fetch_ticker_string():
+    rss_url = "https://www.skysports.com/rss/12040"  # High-frequency football feed
+    fallback_string = (
+        "🏆 FIFA WORLD CUP 2026: Tournament group structures finalized ahead of high-intensity opening match blocks "
+        "⚽ FUTURES MARKET UPDATE: Analytical goalscoring models shifting odds heavily toward clinical penalty area specialists "
+        "🏆 TACTICAL REPORT: Technical staff implement strict player rotation patterns ahead of grueling cross-continent travel corridors "
+        "⚽ READY TO WATCH: Broadcast metrics indicate record-breaking views expected live across Australia on SBS Networks."
+    )
     try:
         req = urllib.request.Request(rss_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=6) as response:
+        with urllib.request.urlopen(req, timeout=5) as response:
             xml_data = response.read()
             
         root = ET.fromstring(xml_data)
-        articles = []
+        ticker_items = []
         
-        # Scrape and process the top 5 trending news items
-        for item in root.findall('.//item')[:5]:
+        for item in root.findall('.//item')[:8]:
             title = item.find('title').text if item.find('title') is not None else ""
-            link = item.find('link').text if item.find('link') is not None else "https://inside.fifa.com"
-            desc = item.find('description').text if item.find('description') is not None else ""
-            
-            # Clean HTML artifacts out of descriptions
-            desc_clean = re.sub('<[^<]+?>', '', desc).strip()
-            if len(desc_clean) > 110:
-                desc_clean = desc_clean[:110] + "..."
-                
-            articles.append({"title": title, "desc": desc_clean, "link": link})
-        return articles
+            # Filter or tag strings to ensure context is tightly tethered to high stakes tournament metrics
+            if any(k in title.lower() for k in ['world cup', 'fifa', 'international', 'cup', 'squad', 'clash', 'manager']):
+                ticker_items.append(f"⚽ {title.upper().strip()}")
+        
+        if ticker_items:
+            # Combine individual elements into a single long horizontal marquee line
+            return "   ||   ".join(ticker_items) + "   ||   "
+        return fallback_string
     except Exception:
-        # Seamless analytical fallback titles if the server's sandbox experiences strict network blockades
-        return [
-            {"title": "World Cup Tactical Analysis: Underdog Power Indexes", "desc": "Data analysts update performance projections as rosters begin regional grouping adaptations.", "link": "https://inside.fifa.com"},
-            {"title": "Squad Basecamp Preparations entering Final Phases", "desc": "Team management structures finalize travel corridors ahead of initial high-intensity opening block matches.", "link": "https://inside.fifa.com"},
-            {"title": "Tournament Golden Boot Futures Market Shifts", "desc": "Calculated goalscoring distribution maps favor standard clinical penalty area specialists.", "link": "https://inside.fifa.com"}
-        ]
+        return fallback_string
 
-# 📰 RENDER SIDEBAR COMPONENT
-with st.sidebar:
-    st.markdown("## 📰 Live Tournament News")
-    st.write("Real-time match updates & tracking insights:")
-    
-    news_items = fetch_rolling_news()
-    for item in news_items:
-        st.markdown(f"""
-            <div class="news-card">
-                <div class="news-title">{item['title']}</div>
-                <div class="news-desc">{item['desc']}</div>
-                <a href="{item['link']}" target="_blank" class="news-link">Read Full Coverage →</a>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    st.divider()
-    st.caption("Feed synced continuously from international football networks.")
+# 🏁 STEP 1: Render the continuous news ticker string at the absolute top of the viewport canvas
+ticker_text = fetch_ticker_string()
+st.markdown(f"""
+    <div class="ticker-wrap">
+        <div class="ticker-content">
+            <span>{ticker_text}</span>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
+# 🏁 STEP 2: Main Application Title Context
+st.title("🏆 WORLD CUP PREDICTION CHALLENGE")
+st.caption("Broadcast live on SBS | All times shown in AEST")
 
 # 🛠️ Smart Flag Parsing & Country Cleaning Engine
 def get_flag_url(text):
@@ -216,11 +209,9 @@ def clean_country_name(text):
         return text
     return re.sub(r'[\U0001f1e6-\U0001f1ff\U00010000-\U0010ffff\u2600-\u27bf]', '', text).strip()
 
-# Helper function to get current AEST time safely
 def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
-# 🔄 Fixed Bulletproof Date Parser
 def clean_and_parse_date(date_val):
     if not date_val or pd.isna(date_val):
         return datetime(2026, 6, 12, 5, 0)
@@ -251,23 +242,15 @@ def fetch_api_football_forecast(home_team, away_team):
     home_clean = normalize_name(home_team)
     away_clean = normalize_name(away_team)
     
-    # 📈 Complete 48-Nation World Cup 2026 Power Scale Mapping
     power_tiers = {
-        # Tier 1: World Cup Favorites (Rank 1-10)
         'france': 95, 'argentina': 95, 'spain': 94, 'england': 92, 'brazil': 91,
         'portugal': 89, 'netherlands': 88, 'belgium': 88, 'germany': 87, 'morocco': 86,
-        
-        # Tier 2: Dark Horses & Heavy Hitters (Rank 11-25)
         'croatia': 85, 'uruguay': 84, 'colombia': 83, 'usa': 83, 'japan': 82, 
         'senegal': 81, 'mexico': 81, 'denmark': 81, 'switzerland': 80, 'south korea': 79,
-        
-        # Tier 3: Dangerous Mid-Tiers (Rank 26-45)
         'australia': 78, 'turkiye': 78, 'ecuador': 77, 'austria': 77, 'sweden': 77,
         'nigeria': 76, 'algeria': 76, 'egypt': 76, 'scotland': 76, 'canada': 75, 
         'czech republic': 75, 'ukraine': 75, 'poland': 74, 'wales': 74, 'panama': 74, 
         'paraguay': 74, 'ghana': 74, 'serbia': 73, 'tunisia': 73, 'cameroon': 73,
-        
-        # Tier 4: Competitive Qualifiers & Debutants (Rank 46+)
         'dr congo': 73, 'bosnia and herzegovina': 73, 'cote d\'ivoire': 73, 'qatar': 72, 
         'south africa': 72, 'uzbekistan': 71, 'saudi arabia': 71, 'iraq': 71, 
         'jordan': 69, 'cape verde': 69, 'haiti': 68, 'curacao': 67, 'new zealand': 66
@@ -294,7 +277,6 @@ def fetch_api_football_forecast(home_team, away_team):
     else:
         fallback_advice = f"Direct Win Strategy: Match favor leans toward {a_display}"
 
-    # --- API NETWORK LIVE OVERRIDE ATTEMPT ---
     api_key = "9db5ecb263b045ec724c436046a92bd5"
     headers = {
         'x-apisports-key': api_key,
