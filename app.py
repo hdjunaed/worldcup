@@ -130,6 +130,18 @@ def clean_country_name(text):
 def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
+# 🔄 Upgraded Smart Date Parser (Prevents Sheet Format Mismatch Crashes)
+def clean_and_parse_date(date_val):
+    try:
+        date_str = str(date_val).strip()
+        if not date_str or date_str.lower() == 'nan':
+            return datetime.now()
+        if "2026" not in date_str:
+            date_str = f"{date_str} 2026"
+        return pd.to_datetime(date_str, fuzzy=True)
+    except Exception:
+        return datetime.now()
+
 # 🔮 AUTOMATIC HYBRID FORECAST ENGINE (REAL-TIME FIFA RANKING FALLBACK)
 @st.cache_data(ttl=7200) # Caches data for 2 hours to safeguard your 100 daily API credits
 def fetch_api_football_forecast(home_team, away_team):
@@ -154,21 +166,17 @@ def fetch_api_football_forecast(home_team, away_team):
         'senegal': 80, 'switzerland': 80, 'canada': 75, 'paraguay': 74, 'saudi arabia': 71
     }
     
-    # Get baseline strengths (default to average tier 75 if country not in list)
     home_strength = power_tiers.get(home_clean, 75)
     away_strength = power_tiers.get(away_clean, 75)
     
-    # Apply a modest home advantage weighting calculation
     home_calc = home_strength + 5
     away_calc = away_strength
     total = home_calc + away_calc
     
-    # Build dynamic fallback probabilities that make sense to the users
-    fallback_home_pct = int((home_calc / total) * 76)  # Scale to leave room for a draw
+    fallback_home_pct = int((home_calc / total) * 76)
     fallback_away_pct = int((away_calc / total) * 76)
     fallback_draw_pct = 100 - fallback_home_pct - fallback_away_pct
     
-    # Generate a realistic recommendation label based on strength gaps
     h_display = clean_country_name(home_team)
     a_display = clean_country_name(away_team)
     if abs(home_calc - away_calc) <= 4:
@@ -205,7 +213,6 @@ def fetch_api_football_forecast(home_team, away_team):
             pred_url = f"https://v3.football.api-sports.io/predictions?fixture={fixture_id}"
             pred_res = requests.get(pred_url, headers=headers, timeout=10).json()
             
-            # Ensure the prediction response array actually contains generated data
             if pred_res.get("response") and len(pred_res["response"]) > 0:
                 data = pred_res["response"][0]
                 predictions = data.get("predictions", {})
@@ -226,7 +233,6 @@ def fetch_api_football_forecast(home_team, away_team):
     except Exception:
         pass
         
-    # Clean return using our intelligent ranking engine if the live data isn't ready on their server
     return {
         "home": fallback_home_pct, 
         "draw": fallback_draw_pct, 
@@ -265,7 +271,10 @@ except Exception as e:
 matches_df.columns = matches_df.columns.str.strip()
 leaderboard_df.columns = leaderboard_df.columns.str.strip()
 matches_df['Match_ID'] = matches_df['Match_ID'].astype(str)
-matches_df['Kickoff_AEST'] = pd.to_datetime(matches_df['Kickoff_AEST'] + ' 2026', format='%a, %d %b %H:%M %Y')
+
+# Safe structural formatting application via our fault-tolerant module
+matches_df['Kickoff_AEST'] = matches_df['Kickoff_AEST'].apply(clean_and_parse_date)
+
 participants = ['ND', 'CD', 'SB', 'GB', 'LS', 'HD']
 
 tab1, tab2, tab3 = st.tabs(["📊 Leaderboard", "⚽ Submit Predictions", "🔒 Admin Engine"])
@@ -301,7 +310,7 @@ with tab2:
         overview_rows = []
         for _, row in active_matches.iterrows():
             m_id = row['Match_ID']
-            kickoff_str = row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')
+            kickoff_str = row['Kickoff_AEST'].strftime('%a, %d %b, %I:%M %p')
             
             saved_first = row.get(f'{user}_FirstScorer', "")
             saved_score = row.get(f'{user}_Score', "")
@@ -353,7 +362,7 @@ with tab2:
             m_row = matches_df.loc[m_idx]
             
             is_locked = current_time >= m_row['Kickoff_AEST']
-            st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%d %b, %I:%M %p')} AEST ({'LOCKED' if is_locked else 'Open for Changes'})")
+            st.write(f"⏰ **Kickoff:** {m_row['Kickoff_AEST'].strftime('%a, %d %b, %I:%M %p')} AEST ({'LOCKED' if is_locked else 'Open for Changes'})")
             
             home_clean = clean_country_name(m_row['Home_Team'])
             away_clean = clean_country_name(m_row['Away_Team'])
@@ -369,7 +378,7 @@ with tab2:
                 if get_flag_url(m_row['Away_Team']): st.image(get_flag_url(m_row['Away_Team']), width=90)
                 st.markdown(f"### {away_clean}")
             
-            # 🤖 Hybrid Smart Analytics View
+            # 🤖 Hybrid Analytics
             forecast = fetch_api_football_forecast(m_row['Home_Team'], m_row['Away_Team'])
             st.markdown(f"<div class='forecast-box'>⚙️ <b>Win Probabilities:</b> {home_clean}: <b>{forecast['home']}%</b> | Draw: <b>{forecast['draw']}%</b> | {away_clean}: <b>{forecast['away']}%</b><br>📋 <b>Recommendation:</b> <i>{forecast['advice']}</i></div>", unsafe_allow_html=True)
             
@@ -384,7 +393,6 @@ with tab2:
                 
             predicted_score_str = f"{p_home_score}-{p_away_score}"
             
-            # Updated First Scorer UI Option Dropdown
             p_first = st.selectbox("2. Which country will score first?", ["Select option...", home_clean, away_clean, "No Goal"])
             
             if st.button("Lock Prediction In"):
@@ -448,7 +456,6 @@ with tab3:
             with col2:
                 act_away = st.number_input(f"Actual {away_clean} Score", min_value=0, step=1, value=0, key="aa")
             
-            # Dynamic filtering based on entry bounds to avoid administration error
             if act_home == 0 and act_away == 0:
                 act_first_options = ["No Goal"]
             elif act_home > 0 and act_away == 0:
