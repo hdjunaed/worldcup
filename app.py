@@ -133,7 +133,9 @@ st.markdown("""
 # 📡 LIVE WORLD CUP NEWS TICKER ENGINE
 @st.cache_data(ttl=900)
 def fetch_ticker_string():
-    rss_url = "https://www.skysports.com/rss/12040"  # High-frequency football feed
+    # Swapped to your preferred BBC RSS Feed URL
+    rss_url = "http://newsrss.bbc.co.uk/rss/sportonline_uk_edition/football/rss.xml"
+    
     fallback_string = (
         "🏆 FIFA WORLD CUP 2026: Tournament group structures finalized ahead of high-intensity opening match blocks "
         "⚽ FUTURES MARKET UPDATE: Analytical goalscoring models shifting odds heavily toward clinical penalty area specialists "
@@ -148,14 +150,14 @@ def fetch_ticker_string():
         root = ET.fromstring(xml_data)
         ticker_items = []
         
-        for item in root.findall('.//item')[:8]:
+        for item in root.findall('.//item')[:15]: # Checked a wider sample size since it's a general feed
             title = item.find('title').text if item.find('title') is not None else ""
-            # Filter or tag strings to ensure context is tightly tethered to high stakes tournament metrics
-            if any(k in title.lower() for k in ['world cup', 'fifa', 'international', 'cup', 'squad', 'clash', 'manager']):
+            
+            # Tighter filter keywords to ensure BBC's domestic UK news doesn't clutter your World Cup space
+            if any(k in title.lower() for k in ['world cup', 'fifa', 'international', 'national team', 'qualifier', '2026']):
                 ticker_items.append(f"⚽ {title.upper().strip()}")
         
         if ticker_items:
-            # Combine individual elements into a single long horizontal marquee line
             return "   ||   ".join(ticker_items) + "   ||   "
         return fallback_string
     except Exception:
