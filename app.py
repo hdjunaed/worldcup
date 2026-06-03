@@ -114,7 +114,8 @@ def get_flag_url(text):
         'morocco': 'ma', 'netherlands': 'nl', 'portugal': 'pt', 'spain': 'es', 
         'usa': 'us', 'united states': 'us', 'england': 'gb-eng', 'wales': 'gb-wls',
         'scotland': 'gb-sct', 'saudi arabia': 'sa', 'south korea': 'kr', 'uruguay': 'uy',
-        'south africa': 'za', 'paraguay': 'py', 'bosnia & herz.': 'ba', 'czech republic': 'cz'
+        'south africa': 'za', 'paraguay': 'py', 'bosnia & herz.': 'ba', 'czech republic': 'cz',
+        'haiti': 'ht', 'curacao': 'cw', 'uzbekistan': 'uz', 'jordan': 'jo', 'cape verde': 'cv'
     }
     pure_name = re.sub(r'[\U0001f1e6-\U0001f1ff\U00010000-\U0010ffff\u2600-\u27bf]', '', text_clean).strip()
     if pure_name in flag_map:
@@ -136,7 +137,6 @@ def clean_and_parse_date(date_val):
         return datetime(2026, 6, 12, 5, 0)
     date_str = str(date_val).strip()
     try:
-        # standard ISO parsing block
         return pd.to_datetime(date_str, dayfirst=False)
     except Exception:
         try:
@@ -150,27 +150,46 @@ def fetch_api_football_forecast(home_team, away_team):
     def normalize_name(name):
         n = clean_country_name(name).lower().strip()
         mapping = {
-            'usa': 'usa', 'united states': 'usa', 'united states of america': 'usa',
-            'south korea': 'korea republic', 'saudi arabia': 'saudi arabia',
-            'england': 'england', 'uae': 'united arab emirates'
+            'united states': 'usa', 'united states of america': 'usa',
+            'korea republic': 'south korea', 'republic of korea': 'south korea',
+            'czechia': 'czech republic',
+            'bosnia & herz.': 'bosnia and herzegovina', 'bosnia & herzegovina': 'bosnia and herzegovina',
+            'cote d\'ivoire': "cote d'ivoire", 'ivory coast': "cote d'ivoire",
+            'congo dr': 'dr congo', 'democratic republic of the congo': 'dr congo'
         }
         return mapping.get(n, n)
 
     home_clean = normalize_name(home_team)
     away_clean = normalize_name(away_team)
     
+    # 📈 Complete 48-Nation World Cup 2026 Power Scale Mapping
     power_tiers = {
-        'argentina': 95, 'france': 94, 'spain': 93, 'england': 92, 'brazil': 91,
-        'belgium': 89, 'netherlands': 88, 'portugal': 88, 'italy': 87, 'germany': 87,
-        'croatia': 85, 'usa': 83, 'mexico': 81, 'australia': 78, 'japan': 82,
-        'south korea': 79, 'morocco': 84, 'colombia': 83, 'uruguay': 84, 'denmark': 81,
-        'senegal': 80, 'switzerland': 80, 'canada': 75, 'paraguay': 74, 'saudi arabia': 71
+        # Tier 1: World Cup Favorites (Rank 1-10)
+        'france': 95, 'argentina': 95, 'spain': 94, 'england': 92, 'brazil': 91,
+        'portugal': 89, 'netherlands': 88, 'belgium': 88, 'germany': 87, 'morocco': 86,
+        
+        # Tier 2: Dark Horses & Heavy Hitters (Rank 11-25)
+        'croatia': 85, 'uruguay': 84, 'colombia': 83, 'usa': 83, 'japan': 82, 
+        'senegal': 81, 'mexico': 81, 'denmark': 81, 'switzerland': 80, 'south korea': 79,
+        
+        # Tier 3: Dangerous Mid-Tiers (Rank 26-45)
+        'australia': 78, 'turkiye': 78, 'ecuador': 77, 'austria': 77, 'sweden': 77,
+        'nigeria': 76, 'algeria': 76, 'egypt': 76, 'scotland': 76, 'canada': 75, 
+        'czech republic': 75, 'ukraine': 75, 'poland': 74, 'wales': 74, 'panama': 74, 
+        'paraguay': 74, 'ghana': 74, 'serbia': 73, 'tunisia': 73, 'cameroon': 73,
+        
+        # Tier 4: Competitive Qualifiers & Debutants (Rank 46+)
+        'dr congo': 73, 'bosnia and herzegovina': 73, 'cote d\'ivoire': 73, 'qatar': 72, 
+        'south africa': 72, 'uzbekistan': 71, 'saudi arabia': 71, 'iraq': 71, 
+        'jordan': 69, 'cape verde': 69, 'haiti': 68, 'curacao': 67, 'new zealand': 66
     }
     
-    home_strength = power_tiers.get(home_clean, 75)
-    away_strength = power_tiers.get(away_clean, 75)
+    # Baseline fallback if a team is completely unrecognized
+    home_strength = power_tiers.get(home_clean, 70)
+    away_strength = power_tiers.get(away_clean, 70)
     
-    home_calc = home_strength + 5
+    # Apply controlled Home Advantage modifier (+3)
+    home_calc = home_strength + 3
     away_calc = away_strength
     total = home_calc + away_calc
     
@@ -180,13 +199,15 @@ def fetch_api_football_forecast(home_team, away_team):
     
     h_display = clean_country_name(home_team)
     a_display = clean_country_name(away_team)
-    if abs(home_calc - away_calc) <= 4:
-        fallback_advice = f"Tactical Draw or Double Chance: {h_display}"
+    
+    if abs(home_calc - away_calc) <= 3:
+        fallback_advice = f"Tactical Balance: Highly competitive match between {h_display} and {a_display}."
     elif home_calc > away_calc:
         fallback_advice = f"Direct Win Strategy: Match favor leans toward {h_display}"
     else:
         fallback_advice = f"Direct Win Strategy: Match favor leans toward {a_display}"
 
+    # --- API NETWORK LIVE OVERRIDE ATTEMPT ---
     api_key = "9db5ecb263b045ec724c436046a92bd5"
     headers = {
         'x-apisports-key': api_key,
