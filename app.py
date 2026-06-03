@@ -114,7 +114,7 @@ def get_flag_url(text):
         'morocco': 'ma', 'netherlands': 'nl', 'portugal': 'pt', 'spain': 'es', 
         'usa': 'us', 'united states': 'us', 'england': 'gb-eng', 'wales': 'gb-wls',
         'scotland': 'gb-sct', 'saudi arabia': 'sa', 'south korea': 'kr', 'uruguay': 'uy',
-        'south africa': 'za', 'paraguay': 'py'
+        'south africa': 'za', 'paraguay': 'py', 'bosnia & herz.': 'ba', 'czech republic': 'cz'
     }
     pure_name = re.sub(r'[\U0001f1e6-\U0001f1ff\U00010000-\U0010ffff\u2600-\u27bf]', '', text_clean).strip()
     if pure_name in flag_map:
@@ -130,23 +130,22 @@ def clean_country_name(text):
 def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
-# 🔄 Bulletproof Smart Date Parser (Forces dayfirst parsing to handle Sheets conversion formats)
+# 🔄 Fixed Bulletproof Date Parser (No keyword arguments conflicts)
 def clean_and_parse_date(date_val):
+    if not date_val or pd.isna(date_val):
+        return datetime(2026, 6, 12, 5, 0)
+    date_str = str(date_val).strip()
     try:
-        date_str = str(date_val).strip()
-        if not date_str or date_str.lower() == 'nan':
-            return datetime.now()
-        if "2026" not in date_str:
-            date_str = f"{date_str} 2026"
-        return pd.to_datetime(date_str, fuzzy=True, dayfirst=True)
+        # standard ISO parsing block
+        return pd.to_datetime(date_str, dayfirst=False)
     except Exception:
         try:
-            return pd.to_datetime(date_str, fuzzy=True)
+            return pd.to_datetime(date_str, dayfirst=True)
         except Exception:
-            return datetime.now()
+            return datetime(2026, 6, 12, 5, 0)
 
 # 🔮 AUTOMATIC HYBRID FORECAST ENGINE (REAL-TIME FIFA RANKING FALLBACK)
-@st.cache_data(ttl=7200) # Caches data for 2 hours to safeguard your 100 daily API credits
+@st.cache_data(ttl=7200)
 def fetch_api_football_forecast(home_team, away_team):
     def normalize_name(name):
         n = clean_country_name(name).lower().strip()
@@ -160,7 +159,6 @@ def fetch_api_football_forecast(home_team, away_team):
     home_clean = normalize_name(home_team)
     away_clean = normalize_name(away_team)
     
-    # 📈 Real-World Power Tier Mapping (Based on FIFA Rankings)
     power_tiers = {
         'argentina': 95, 'france': 94, 'spain': 93, 'england': 92, 'brazil': 91,
         'belgium': 89, 'netherlands': 88, 'portugal': 88, 'italy': 87, 'germany': 87,
@@ -189,7 +187,6 @@ def fetch_api_football_forecast(home_team, away_team):
     else:
         fallback_advice = f"Direct Win Strategy: Match favor leans toward {a_display}"
 
-    # --- API NETWORK ATTEMPT ---
     api_key = "9db5ecb263b045ec724c436046a92bd5"
     headers = {
         'x-apisports-key': api_key,
@@ -275,7 +272,7 @@ matches_df.columns = matches_df.columns.str.strip()
 leaderboard_df.columns = leaderboard_df.columns.str.strip()
 matches_df['Match_ID'] = matches_df['Match_ID'].astype(str)
 
-# Safe structural formatting application via our fault-tolerant module
+# Apply fixed date parser
 matches_df['Kickoff_AEST'] = matches_df['Kickoff_AEST'].apply(clean_and_parse_date)
 
 participants = ['ND', 'CD', 'SB', 'GB', 'LS', 'HD']
@@ -342,40 +339,37 @@ with tab2:
             
         st.divider()
         
-        # ✍️ 2. PREDICTION SUBMISSION FORM (EXACT ROLLING EXCITEMENT ENGINE)
+        # ✍️ 2. PREDICTION SUBMISSION FORM (PHASE CONTEXT ROLLING ENGINE)
         st.markdown("### ✍️ Submit or Edit a Prediction")
         
         tournament_start_date = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
+        uncompleted_matches = matches_df[matches_df['Status'] != 'Completed'].copy()
         
-        # Determine the allowed 3-day target calendar dates based on tournament phase
         if today < tournament_start_date:
-            # PHASE 1 (Pre-Tournament): Explicitly open Day 1, Day 2, and Day 3 right now
+            # PHASE 1 (Pre-Tournament): Open entire first 3 days (June 12, 13, and 14) for early hype
             allowed_days = [
                 tournament_start_date,
                 tournament_start_date + timedelta(days=1),
                 tournament_start_date + timedelta(days=2)
             ]
+            open_matches = uncompleted_matches[uncompleted_matches['Kickoff_Date'].isin(allowed_days)].copy()
         else:
-            # PHASE 2 (Live Tournament): Include today (Day D), tomorrow (D+1), and day after (D+2)
-            allowed_days = [
-                today,
-                today + timedelta(days=1),
-                today + timedelta(days=2)
-            ]
-        
-        # Strip away archived records
-        uncompleted_matches = matches_df[matches_df['Status'] != 'Completed'].copy()
-        
-        # Apply the allowed 3-day date window rule
-        open_matches = uncompleted_matches[uncompleted_matches['Kickoff_Date'].isin(allowed_days)].copy()
-        
-        # Hard lock individual games the second their kickoff time passes current AEST clock
-        open_matches = open_matches[open_matches['Kickoff_AEST'] > current_time].copy()
+            # PHASE 2 (Live Tournament Rolling Window):
+            day_d = today
+            day_d1 = today + timedelta(days=1)
+            day_d2 = today + timedelta(days=2)
+            
+            # Condition A: Today's matches that have not kicked off yet
+            cond_today = (uncompleted_matches['Kickoff_Date'] == day_d) & (uncompleted_matches['Kickoff_AEST'] > current_time)
+            # Condition B: Tomorrow's and the Day After Tomorrow's matches entirely
+            cond_future = uncompleted_matches['Kickoff_Date'].isin([day_d1, day_d2])
+            
+            open_matches = uncompleted_matches[cond_today | cond_future].copy()
         
         if open_matches.empty:
             st.info("No matches scheduled for this specific rolling window are open right now.")
         else:
-            match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {clean_country_name(r['Home_Team'])} vs {clean_country_name(r['Away_Team'])} ({r['Kickoff_AEST'].strftime('%a, %d %b')})", axis=1).tolist()
+            match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {clean_country_name(r['Home_Team'])} vs {clean_country_name(r['Away_Team'])} ({r['Kickoff_AEST'].strftime('%a, %d %b %I:%M %p')})", axis=1).tolist()
             selected_pred_match = st.selectbox("Choose a match to log/modify:", match_options)
             
             m_id = selected_pred_match.split(":")[0].replace("Match ", "").strip()
