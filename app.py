@@ -265,7 +265,7 @@ except Exception as e:
 matches_df.columns = matches_df.columns.str.strip()
 leaderboard_df.columns = leaderboard_df.columns.str.strip()
 matches_df['Match_ID'] = matches_df['Match_ID'].astype(str)
-matches_df['Kickoff_AEST'] = pd.to_datetime(matches_df['Kickoff_AEST'])
+matches_df['Kickoff_AEST'] = pd.to_datetime(matches_df['Kickoff_AEST'] + ' 2026', format='%a, %d %b %H:%M %Y')
 participants = ['ND', 'CD', 'SB', 'GB', 'LS', 'HD']
 
 tab1, tab2, tab3 = st.tabs(["📊 Leaderboard", "⚽ Submit Predictions", "🔒 Admin Engine"])
