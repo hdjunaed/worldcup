@@ -130,7 +130,7 @@ def clean_country_name(text):
 def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
-# 🔄 Upgraded Smart Date Parser (Prevents Sheet Format Mismatch Crashes)
+# 🔄 Bulletproof Smart Date Parser (Forces dayfirst parsing to handle Sheets conversion formats)
 def clean_and_parse_date(date_val):
     try:
         date_str = str(date_val).strip()
@@ -138,9 +138,12 @@ def clean_and_parse_date(date_val):
             return datetime.now()
         if "2026" not in date_str:
             date_str = f"{date_str} 2026"
-        return pd.to_datetime(date_str, fuzzy=True)
+        return pd.to_datetime(date_str, fuzzy=True, dayfirst=True)
     except Exception:
-        return datetime.now()
+        try:
+            return pd.to_datetime(date_str, fuzzy=True)
+        except Exception:
+            return datetime.now()
 
 # 🔮 AUTOMATIC HYBRID FORECAST ENGINE (REAL-TIME FIFA RANKING FALLBACK)
 @st.cache_data(ttl=7200) # Caches data for 2 hours to safeguard your 100 daily API credits
@@ -339,32 +342,35 @@ with tab2:
             
         st.divider()
         
-        # ✍️ 2. PREDICTION SUBMISSION FORM (ROLLING 3-DAY EXCITEMENT WINDOW)
+        # ✍️ 2. PREDICTION SUBMISSION FORM (EXACT ROLLING EXCITEMENT ENGINE)
         st.markdown("### ✍️ Submit or Edit a Prediction")
         
-        # Define the absolute start of the tournament
         tournament_start_date = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
         
-        # Filter out completed or locked matches first
-        uncompleted_matches = matches_df[matches_df['Status'] != 'Completed'].copy()
-        open_matches = uncompleted_matches[uncompleted_matches['Kickoff_AEST'] > current_time].copy()
-        
+        # Determine the allowed 3-day target calendar dates based on tournament phase
         if today < tournament_start_date:
-            # PHASE 1: Pre-Tournament Hype Window (Open the first 3 days explicitly)
-            opening_days = [
+            # PHASE 1 (Pre-Tournament): Explicitly open Day 1, Day 2, and Day 3 right now
+            allowed_days = [
                 tournament_start_date,
                 tournament_start_date + timedelta(days=1),
                 tournament_start_date + timedelta(days=2)
             ]
-            open_matches = open_matches[open_matches['Kickoff_Date'].isin(opening_days)].copy()
         else:
-            # PHASE 2: Live Tournament Rolling Window (Open tomorrow, day after, and next day)
-            rolling_days = [
+            # PHASE 2 (Live Tournament): Include today (Day D), tomorrow (D+1), and day after (D+2)
+            allowed_days = [
+                today,
                 today + timedelta(days=1),
-                today + timedelta(days=2),
-                today + timedelta(days=3)
+                today + timedelta(days=2)
             ]
-            open_matches = open_matches[open_matches['Kickoff_Date'].isin(rolling_days)].copy()
+        
+        # Strip away archived records
+        uncompleted_matches = matches_df[matches_df['Status'] != 'Completed'].copy()
+        
+        # Apply the allowed 3-day date window rule
+        open_matches = uncompleted_matches[uncompleted_matches['Kickoff_Date'].isin(allowed_days)].copy()
+        
+        # Hard lock individual games the second their kickoff time passes current AEST clock
+        open_matches = open_matches[open_matches['Kickoff_AEST'] > current_time].copy()
         
         if open_matches.empty:
             st.info("No matches scheduled for this specific rolling window are open right now.")
