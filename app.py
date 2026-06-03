@@ -300,7 +300,6 @@ with tab2:
     if user != "Select your name...":
         current_time = get_current_aest()
         today = current_time.date()
-        tomorrow = today + timedelta(days=1)
         matches_df['Kickoff_Date'] = matches_df['Kickoff_AEST'].dt.date
         
         # 📋 1. LIVE CURRENT & FUTURE PREDICTIONS OVERVIEW
@@ -340,21 +339,37 @@ with tab2:
             
         st.divider()
         
-        # ✍️ 2. PREDICTION SUBMISSION FORM
+        # ✍️ 2. PREDICTION SUBMISSION FORM (ROLLING 3-DAY EXCITEMENT WINDOW)
         st.markdown("### ✍️ Submit or Edit a Prediction")
         
-        opening_day_1 = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
-        opening_day_2 = datetime.strptime("2026-06-13", "%Y-%m-%d").date()
+        # Define the absolute start of the tournament
+        tournament_start_date = datetime.strptime("2026-06-12", "%Y-%m-%d").date()
         
-        if today < opening_day_1:
-            open_matches = matches_df[(matches_df['Status'] != 'Completed') & (matches_df['Kickoff_Date'].isin([opening_day_1, opening_day_2]))].copy()
+        # Filter out completed or locked matches first
+        uncompleted_matches = matches_df[matches_df['Status'] != 'Completed'].copy()
+        open_matches = uncompleted_matches[uncompleted_matches['Kickoff_AEST'] > current_time].copy()
+        
+        if today < tournament_start_date:
+            # PHASE 1: Pre-Tournament Hype Window (Open the first 3 days explicitly)
+            opening_days = [
+                tournament_start_date,
+                tournament_start_date + timedelta(days=1),
+                tournament_start_date + timedelta(days=2)
+            ]
+            open_matches = open_matches[open_matches['Kickoff_Date'].isin(opening_days)].copy()
         else:
-            open_matches = matches_df[(matches_df['Status'] != 'Completed') & (matches_df['Kickoff_Date'].isin([today, tomorrow]))].copy()
+            # PHASE 2: Live Tournament Rolling Window (Open tomorrow, day after, and next day)
+            rolling_days = [
+                today + timedelta(days=1),
+                today + timedelta(days=2),
+                today + timedelta(days=3)
+            ]
+            open_matches = open_matches[open_matches['Kickoff_Date'].isin(rolling_days)].copy()
         
         if open_matches.empty:
-            st.info("No matches scheduled for this window are open right now.")
+            st.info("No matches scheduled for this specific rolling window are open right now.")
         else:
-            match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {clean_country_name(r['Home_Team'])} vs {clean_country_name(r['Away_Team'])} ({r['Kickoff_AEST'].strftime('%d %b')})", axis=1).tolist()
+            match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {clean_country_name(r['Home_Team'])} vs {clean_country_name(r['Away_Team'])} ({r['Kickoff_AEST'].strftime('%a, %d %b')})", axis=1).tolist()
             selected_pred_match = st.selectbox("Choose a match to log/modify:", match_options)
             
             m_id = selected_pred_match.split(":")[0].replace("Match ", "").strip()
@@ -378,7 +393,7 @@ with tab2:
                 if get_flag_url(m_row['Away_Team']): st.image(get_flag_url(m_row['Away_Team']), width=90)
                 st.markdown(f"### {away_clean}")
             
-            # 🤖 Hybrid Analytics
+            # 🤖 Hybrid Smart Analytics View
             forecast = fetch_api_football_forecast(m_row['Home_Team'], m_row['Away_Team'])
             st.markdown(f"<div class='forecast-box'>⚙️ <b>Win Probabilities:</b> {home_clean}: <b>{forecast['home']}%</b> | Draw: <b>{forecast['draw']}%</b> | {away_clean}: <b>{forecast['away']}%</b><br>📋 <b>Recommendation:</b> <i>{forecast['advice']}</i></div>", unsafe_allow_html=True)
             
