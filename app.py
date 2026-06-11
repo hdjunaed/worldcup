@@ -638,7 +638,7 @@ with tab3:
                                         break
                         
                         st.success("🏆 Match finalized! Scores stored and Leaderboard updated successfully.")
-                        st.clear_cache()
+                        st.cache_data.clear()
                         st.rerun()
                         
                 except Exception as write_err:
