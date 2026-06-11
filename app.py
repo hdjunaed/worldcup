@@ -520,6 +520,7 @@ with tab2:
                         st.error(f"Failed to update spreadsheet cells: {write_err}")
 
 # --- TAB 3: ADMIN ENGINE ---
+# --- TAB 3: ADMIN ENGINE ---
 with tab3:
     st.subheader("Admin Scoring Panel")
     admin_password = st.text_input("Enter Password", type="password")
@@ -535,7 +536,8 @@ with tab3:
             selected_match_str = st.selectbox("Select match to calculate points:", match_options)
             
             selected_id = selected_match_str.split(":")[0].replace("Match ", "").strip()
-            match_row = matches_df[matches_df['Match_ID'] == selected_id].iloc[0]
+            m_idx = matches_df[matches_df['Match_ID'] == selected_id].index[0]
+            match_row = matches_df.loc[m_idx]
             
             home_clean = clean_country_name(match_row['Home_Team'])
             away_clean = clean_country_name(match_row['Away_Team'])
@@ -562,7 +564,10 @@ with tab3:
             actual_first_val = match_row['Home_Team'] if act_first_selection == home_clean else (match_row['Away_Team'] if act_first_selection == away_clean else "No Goal")
             
             st.divider()
-            st.markdown("### New Rules Points Calculations:")
+            st.markdown("### New Rules Points Preview:")
+            
+            # Temporary storage to hold calculated points for the commit step
+            calculated_points_delta = {}
             
             for p in participants:
                 p_first_col = f'{p}_FirstScorer'
@@ -583,6 +588,8 @@ with tab3:
                 if first_correct:
                     earned_points += 10
                     breakdown.append("First Scorer Match (+10)")
+                
+                calculated_points_delta[p] = earned_points
                     
                 if earned_points == 20:
                     st.success(f"🔥 **{p} Maxed Out!** Award **+20 Points** (Score: {p_score}, First Scorer: {clean_country_name(p_first)})")
@@ -591,6 +598,51 @@ with tab3:
                 else:
                     st.write(f"⚪ **{p} got 0 points** (Predicted {p_score} & {clean_country_name(p_first)})")
                     
-            st.info("📌 Next Step: Manually adjust the 'Leaderboard' tab with the totals, set the match 'Status' to 'Completed' inside your sheet, and refresh.")
+            st.divider()
+            
+            # 🚀 NEW AUTOMATED COMMIT ENGINE BUTTON
+            if st.button("💾 Save & Finalize Match Results"):
+                try:
+                    with st.spinner("Updating Google Sheets & calculating points live..."):
+                        sheet_row_num = int(m_idx) + 2
+                        match_headers = [h.strip() for h in matches_worksheet.row_values(1)]
+                        
+                        # 1. Flip Status to Completed
+                        if "Status" in match_headers:
+                            status_idx = match_headers.index("Status") + 1
+                            matches_worksheet.update_cell(sheet_row_num, status_idx, "Completed")
+                        
+                        # 2. Log Actual Results to matches tab (Safe fallback if columns don't exist yet)
+                        if "Actual_Score" in match_headers:
+                            score_idx = match_headers.index("Actual_Score") + 1
+                            matches_worksheet.update_cell(sheet_row_num, score_idx, actual_score_str)
+                        if "Actual_FirstScorer" in match_headers:
+                            first_idx = match_headers.index("Actual_FirstScorer") + 1
+                            matches_worksheet.update_cell(sheet_row_num, first_idx, str(actual_first_val))
+                        
+                        # 3. Update Player Leaderboard Automatically
+                        lead_headers = [h.strip() for h in leaderboard_worksheet.row_values(1)]
+                        p_col_idx = lead_headers.index("Participant") + 1
+                        pts_col_idx = lead_headers.index("Points") + 1
+                        current_leaderboard_rows = leaderboard_worksheet.get_all_records()
+                        
+                        for p, points_to_add in calculated_points_delta.items():
+                            if points_to_add > 0:
+                                # Find matching participant row in the spreadsheet
+                                for idx, l_row in enumerate(current_leaderboard_rows):
+                                    if str(l_row.get("Participant")).strip() == p:
+                                        l_sheet_row = idx + 2
+                                        current_pts = int(l_row.get("Points", 0))
+                                        new_total = current_pts + points_to_add
+                                        leaderboard_worksheet.update_cell(l_sheet_row, pts_col_idx, new_total)
+                                        break
+                        
+                        st.success("🏆 Match finalized! Scores stored and Leaderboard updated successfully.")
+                        st.clear_cache()
+                        st.rerun()
+                        
+                except Exception as write_err:
+                    st.error(f"Database sync failed: {write_err}")
+                    
     elif admin_password:
         st.error("Incorrect password.")
