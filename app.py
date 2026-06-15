@@ -234,17 +234,15 @@ def fetch_bsd_forecast(home_team, away_team):
         except Exception:
             return 0.0
 
-    def build_forecast(lambda_h, lambda_a, source_label):
-        # --- Top 5 most likely exact scorelines ---
+    def build_forecast(lambda_h, lambda_a):
         scores = []
-        for h in range(7):
-            for a in range(7):
+        for h in range(8):
+            for a in range(8):
                 p = poisson_prob(lambda_h, h) * poisson_prob(lambda_a, a) * 100
                 scores.append((h, a, round(p, 1)))
         scores.sort(key=lambda x: -x[2])
         top_scores = scores[:5]
 
-        # --- First team to score probabilities ---
         no_goal_pct = round(poisson_prob(lambda_h, 0) * poisson_prob(lambda_a, 0) * 100, 1)
         remaining = 100 - no_goal_pct
         total_lam = lambda_h + lambda_a if (lambda_h + lambda_a) > 0 else 1
@@ -258,7 +256,6 @@ def fetch_bsd_forecast(home_team, away_team):
             "no_goal_pct": no_goal_pct,
             "lambda_h": round(lambda_h, 2),
             "lambda_a": round(lambda_a, 2),
-            "source": source_label
         }
 
     def normalize_name(name):
@@ -274,10 +271,6 @@ def fetch_bsd_forecast(home_team, away_team):
         }
         return mapping.get(n, n)
 
-    home_norm = normalize_name(home_team)
-    away_norm = normalize_name(away_team)
-
-    # --- Power-tier fallback xG estimates ---
     power_tiers = {
         'france': 95, 'argentina': 95, 'spain': 94, 'england': 92, 'brazil': 91,
         'portugal': 89, 'netherlands': 88, 'belgium': 88, 'germany': 87, 'morocco': 86,
@@ -291,35 +284,22 @@ def fetch_bsd_forecast(home_team, away_team):
         'south africa': 72, 'uzbekistan': 71, 'saudi arabia': 71, 'iraq': 71,
         'jordan': 69, 'cape verde': 69, 'haiti': 68, 'curacao': 67, 'new zealand': 66
     }
-    h_str = power_tiers.get(home_norm, 70) + 3  # home advantage boost
-    a_str = power_tiers.get(away_norm, 70)
-    fallback_lh = round((h_str / 160) * 2.6, 2)
-    fallback_la = round((a_str / 160) * 2.6, 2)
 
-    # --- BSD API Call ---
-    BSD_TOKEN = "1b32b7e2d5f3d04e56119e2963e3454a521be5b5"
-    try:
-        resp = requests.get(
-            "https://sports.bzzoiro.com/api/predictions/",
-            headers={"Authorization": f"Token {BSD_TOKEN}"},
-            timeout=8
-        )
-        if resp.status_code == 200:
-            results = resp.json().get("results", [])
-            for pred in results:
-                ev = pred.get("event", {})
-                h_name = normalize_name(ev.get("home_team", ""))
-                a_name = normalize_name(ev.get("away_team", ""))
-                if (home_norm in h_name or h_name in home_norm) and \
-                   (away_norm in a_name or a_name in away_norm):
-                    lh = pred.get("expected_home_goals")
-                    la = pred.get("expected_away_goals")
-                    if lh is not None and la is not None and (float(lh) + float(la)) > 0:
-                        return build_forecast(float(lh), float(la), "BSD ML Model")
-    except Exception:
-        pass
+    home_norm = normalize_name(home_team)
+    away_norm = normalize_name(away_team)
 
-    return build_forecast(fallback_lh, fallback_la, "FIFA Ranking Model")
+    h_rating = power_tiers.get(home_norm, 70) + 3  # +3 home advantage
+    a_rating = power_tiers.get(away_norm, 70)
+
+    # xG model: baseline 1.35 goals per team, scaled by rating differential
+    # Each 10-point gap shifts ~0.35 xG between teams
+    avg_rating = (h_rating + a_rating) / 2
+    diff = h_rating - a_rating
+    base_xg = 1.35
+    lambda_h = round(max(0.25, base_xg + (diff / 10) * 0.35 + (h_rating - 78) * 0.015), 2)
+    lambda_a = round(max(0.15, base_xg - (diff / 10) * 0.35 + (a_rating - 78) * 0.015), 2)
+
+    return {**build_forecast(lambda_h, lambda_a), "source": "Poisson xG Model"}
 
 # 🔐 Establish Direct Google Sheets Connection Engine
 @st.cache_resource(ttl=3)
