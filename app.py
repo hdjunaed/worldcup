@@ -489,7 +489,7 @@ with tab2:
             forecast = fetch_api_football_forecast(m_row['Home_Team'], m_row['Away_Team'])
             
             with st.container(border=True):
-                st.markdown("### 📊 TAB-Calibrated Match Analysis")
+                st.markdown("### 📊 Match Analysis")
                 st.caption("We translated live market betting odds into simple, clean percentages for quick analysis:")
                 st.divider()
                 
