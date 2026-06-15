@@ -7,6 +7,7 @@ import re
 import requests
 import urllib.request
 import xml.etree.ElementTree as ET
+from math import exp, factorial
 from google.oauth2.service_account import Credentials
 
 # Page setup - wide layout to maximize workspace and eliminate horizontal scrollbars
@@ -133,7 +134,6 @@ st.markdown("""
 # 📡 LIVE WORLD CUP NEWS TICKER ENGINE
 @st.cache_data(ttl=900)
 def fetch_ticker_string():
-    # Swapped to your preferred BBC RSS Feed URL
     rss_url = "http://newsrss.bbc.co.uk/rss/sportonline_uk_edition/football/rss.xml"
     
     fallback_string = (
@@ -150,10 +150,8 @@ def fetch_ticker_string():
         root = ET.fromstring(xml_data)
         ticker_items = []
         
-        for item in root.findall('.//item')[:15]: # Checked a wider sample size since it's a general feed
+        for item in root.findall('.//item')[:15]:
             title = item.find('title').text if item.find('title') is not None else ""
-            
-            # Tighter filter keywords to ensure BBC's domestic UK news doesn't clutter your World Cup space
             if any(k in title.lower() for k in ['world cup', 'fifa', 'international', 'national team', 'qualifier', '2026']):
                 ticker_items.append(f"⚽ {title.upper().strip()}")
         
@@ -226,111 +224,102 @@ def clean_and_parse_date(date_val):
         except Exception:
             return datetime(2026, 6, 12, 5, 0)
 
-# 🔮 AUTOMATIC HYBRID FORECAST ENGINE (REAL-TIME FIFA RANKING FALLBACK)
-@st.cache_data(ttl=7200)
-def fetch_api_football_forecast(home_team, away_team):
+# 🔮 BSD-POWERED FORECAST ENGINE WITH POISSON SCORE MODELLING
+@st.cache_data(ttl=3600)
+def fetch_bsd_forecast(home_team, away_team):
+
+    def poisson_prob(lam, k):
+        try:
+            return (exp(-lam) * (lam ** k)) / factorial(k)
+        except Exception:
+            return 0.0
+
+    def build_forecast(lambda_h, lambda_a, source_label):
+        # --- Top 5 most likely exact scorelines ---
+        scores = []
+        for h in range(7):
+            for a in range(7):
+                p = poisson_prob(lambda_h, h) * poisson_prob(lambda_a, a) * 100
+                scores.append((h, a, round(p, 1)))
+        scores.sort(key=lambda x: -x[2])
+        top_scores = scores[:5]
+
+        # --- First team to score probabilities ---
+        no_goal_pct = round(poisson_prob(lambda_h, 0) * poisson_prob(lambda_a, 0) * 100, 1)
+        remaining = 100 - no_goal_pct
+        total_lam = lambda_h + lambda_a if (lambda_h + lambda_a) > 0 else 1
+        home_first_pct = round((lambda_h / total_lam) * remaining, 1)
+        away_first_pct = round(remaining - home_first_pct, 1)
+
+        return {
+            "top_scores": top_scores,
+            "home_first_pct": home_first_pct,
+            "away_first_pct": away_first_pct,
+            "no_goal_pct": no_goal_pct,
+            "lambda_h": round(lambda_h, 2),
+            "lambda_a": round(lambda_a, 2),
+            "source": source_label
+        }
+
     def normalize_name(name):
         n = clean_country_name(name).lower().strip()
         mapping = {
             'united states': 'usa', 'united states of america': 'usa',
             'korea republic': 'south korea', 'republic of korea': 'south korea',
             'czechia': 'czech republic',
-            'bosnia & herz.': 'bosnia and herzegovina', 'bosnia & herzegovina': 'bosnia and herzegovina',
-            'cote d\'ivoire': "cote d'ivoire", 'ivory coast': "cote d'ivoire",
+            'bosnia & herz.': 'bosnia and herzegovina',
+            'bosnia & herzegovina': 'bosnia and herzegovina',
+            "cote d'ivoire": 'ivory coast', 'ivory coast': 'ivory coast',
             'congo dr': 'dr congo', 'democratic republic of the congo': 'dr congo'
         }
         return mapping.get(n, n)
 
-    home_clean = normalize_name(home_team)
-    away_clean = normalize_name(away_team)
-    
+    home_norm = normalize_name(home_team)
+    away_norm = normalize_name(away_team)
+
+    # --- Power-tier fallback xG estimates ---
     power_tiers = {
         'france': 95, 'argentina': 95, 'spain': 94, 'england': 92, 'brazil': 91,
         'portugal': 89, 'netherlands': 88, 'belgium': 88, 'germany': 87, 'morocco': 86,
-        'croatia': 85, 'uruguay': 84, 'colombia': 83, 'usa': 83, 'japan': 82, 
+        'croatia': 85, 'uruguay': 84, 'colombia': 83, 'usa': 83, 'japan': 82,
         'senegal': 81, 'mexico': 81, 'denmark': 81, 'switzerland': 80, 'south korea': 79,
         'australia': 78, 'turkiye': 78, 'ecuador': 77, 'austria': 77, 'sweden': 77,
-        'nigeria': 76, 'algeria': 76, 'egypt': 76, 'scotland': 76, 'canada': 75, 
-        'czech republic': 75, 'ukraine': 75, 'poland': 74, 'wales': 74, 'panama': 74, 
+        'nigeria': 76, 'algeria': 76, 'egypt': 76, 'scotland': 76, 'canada': 75,
+        'czech republic': 75, 'ukraine': 75, 'poland': 74, 'wales': 74, 'panama': 74,
         'paraguay': 74, 'ghana': 74, 'serbia': 73, 'tunisia': 73, 'cameroon': 73,
-        'dr congo': 73, 'bosnia and herzegovina': 73, 'cote d\'ivoire': 73, 'qatar': 72, 
-        'south africa': 72, 'uzbekistan': 71, 'saudi arabia': 71, 'iraq': 71, 
+        'dr congo': 73, 'bosnia and herzegovina': 73, 'ivory coast': 73, 'qatar': 72,
+        'south africa': 72, 'uzbekistan': 71, 'saudi arabia': 71, 'iraq': 71,
         'jordan': 69, 'cape verde': 69, 'haiti': 68, 'curacao': 67, 'new zealand': 66
     }
-    
-    home_strength = power_tiers.get(home_clean, 70)
-    away_strength = power_tiers.get(away_clean, 70)
-    
-    home_calc = home_strength + 3
-    away_calc = away_strength
-    total = home_calc + away_calc
-    
-    fallback_home_pct = int((home_calc / total) * 76)
-    fallback_away_pct = int((away_calc / total) * 76)
-    fallback_draw_pct = 100 - fallback_home_pct - fallback_away_pct
-    
-    h_display = clean_country_name(home_team)
-    a_display = clean_country_name(away_team)
-    
-    if abs(home_calc - away_calc) <= 3:
-        fallback_advice = f"Tactical Balance: Highly competitive match between {h_display} and {a_display}."
-    elif home_calc > away_calc:
-        fallback_advice = f"Direct Win Strategy: Match favor leans toward {h_display}"
-    else:
-        fallback_advice = f"Direct Win Strategy: Match favor leans toward {a_display}"
+    h_str = power_tiers.get(home_norm, 70) + 3  # home advantage boost
+    a_str = power_tiers.get(away_norm, 70)
+    fallback_lh = round((h_str / 160) * 2.6, 2)
+    fallback_la = round((a_str / 160) * 2.6, 2)
 
-    api_key = "9db5ecb263b045ec724c436046a92bd5"
-    headers = {
-        'x-apisports-key': api_key,
-        'x-rapidapi-host': 'v3.football.api-sports.io'
-    }
-    
+    # --- BSD API Call ---
+    BSD_TOKEN = "1b32b7e2d5f3d04e56119e2963e3454a521be5b5"
     try:
-        url = "https://v3.football.api-sports.io/fixtures"
-        params = {"league": "1", "season": "2026"}
-        res = requests.get(url, headers=headers, params=params, timeout=10).json()
-        
-        fixture_id = None
-        if res.get("response"):
-            for fix in res["response"]:
-                fix_home = normalize_name(fix["teams"]["home"]["name"])
-                fix_away = normalize_name(fix["teams"]["away"]["name"])
-                
-                if (home_clean in fix_home or fix_home in home_clean) and \
-                   (away_clean in fix_away or fix_away in away_clean):
-                    fixture_id = fix["fixture"]["id"]
-                    break
-                    
-        if fixture_id:
-            pred_url = f"https://v3.football.api-sports.io/predictions?fixture={fixture_id}"
-            pred_res = requests.get(pred_url, headers=headers, timeout=10).json()
-            
-            if pred_res.get("response") and len(pred_res["response"]) > 0:
-                data = pred_res["response"][0]
-                predictions = data.get("predictions", {})
-                percents = predictions.get("percent", {})
-                advice_str = predictions.get("advice", "")
-                
-                h_pct = percents.get("home")
-                d_pct = percents.get("draw")
-                a_pct = percents.get("away")
-                
-                if h_pct is not None and d_pct is not None and a_pct is not None and advice_str != "":
-                    return {
-                        "home": int(str(h_pct).replace("%","")),
-                        "draw": int(str(d_pct).replace("%","")),
-                        "away": int(str(a_pct).replace("%","")),
-                        "advice": advice_str
-                    }
+        resp = requests.get(
+            "https://sports.bzzoiro.com/api/predictions/",
+            headers={"Authorization": f"Token {BSD_TOKEN}"},
+            timeout=8
+        )
+        if resp.status_code == 200:
+            results = resp.json().get("results", [])
+            for pred in results:
+                ev = pred.get("event", {})
+                h_name = normalize_name(ev.get("home_team", ""))
+                a_name = normalize_name(ev.get("away_team", ""))
+                if (home_norm in h_name or h_name in home_norm) and \
+                   (away_norm in a_name or a_name in away_norm):
+                    lh = pred.get("expected_home_goals")
+                    la = pred.get("expected_away_goals")
+                    if lh is not None and la is not None and (float(lh) + float(la)) > 0:
+                        return build_forecast(float(lh), float(la), "BSD ML Model")
     except Exception:
         pass
-        
-    return {
-        "home": fallback_home_pct, 
-        "draw": fallback_draw_pct, 
-        "away": fallback_away_pct, 
-        "advice": f"⭐ {fallback_advice} (FIFA Rank Analytical Preview)"
-    }
+
+    return build_forecast(fallback_lh, fallback_la, "FIFA Ranking Model")
 
 # 🔐 Establish Direct Google Sheets Connection Engine
 @st.cache_resource(ttl=3)
@@ -474,9 +463,45 @@ with tab2:
             with f_col3:
                 if get_flag_url(m_row['Away_Team']): st.image(get_flag_url(m_row['Away_Team']), width=90)
                 st.markdown(f"### {away_clean}")
-            
-            forecast = fetch_api_football_forecast(m_row['Home_Team'], m_row['Away_Team'])
-            st.markdown(f"<div class='forecast-box'>⚙️ <b>Win Probabilities:</b> {home_clean}: <b>{forecast['home']}%</b> | Draw: <b>{forecast['draw']}%</b> | {away_clean}: <b>{forecast['away']}%</b><br>📋 <b>Recommendation:</b> <i>{forecast['advice']}</i></div>", unsafe_allow_html=True)
+
+            # 🔮 BSD FORECAST DISPLAY
+            forecast = fetch_bsd_forecast(m_row['Home_Team'], m_row['Away_Team'])
+
+            st.markdown("<div class='forecast-box'>", unsafe_allow_html=True)
+
+            st.markdown("**🎯 Who is Most Likely to Score First?**")
+            fts_c1, fts_c2, fts_c3 = st.columns(3)
+            with fts_c1:
+                flag_h = get_flag_url(m_row['Home_Team'])
+                if flag_h:
+                    st.image(flag_h, width=36)
+                st.metric(label=home_clean, value=f"{forecast['home_first_pct']}%")
+            with fts_c2:
+                st.metric(label="No Goal / 0–0", value=f"{forecast['no_goal_pct']}%")
+            with fts_c3:
+                flag_a = get_flag_url(m_row['Away_Team'])
+                if flag_a:
+                    st.image(flag_a, width=36)
+                st.metric(label=away_clean, value=f"{forecast['away_first_pct']}%")
+
+            st.markdown("---")
+            st.markdown("**📊 Most Likely Final Scores**")
+            medal_icons = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+            score_cols = st.columns(5)
+            for i, (hg, ag, pct) in enumerate(forecast['top_scores']):
+                with score_cols[i]:
+                    st.markdown(
+                        f"<div style='text-align:center; padding:10px; background:#FFFFFF; "
+                        f"border-radius:8px; border:1px solid #DEE2E6;'>"
+                        f"<div style='font-size:1.2rem;'>{medal_icons[i]}</div>"
+                        f"<div style='font-size:1.4rem; font-weight:bold; color:#198754;'>{hg}–{ag}</div>"
+                        f"<div style='font-size:0.85rem; color:#555;'>{pct}% chance</div>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+
+            st.markdown("</div>", unsafe_allow_html=True)
+            st.caption(f"⚙️ Powered by {forecast['source']} · Expected Goals: {home_clean} {forecast['lambda_h']} xG | {away_clean} {forecast['lambda_a']} xG")
             
             st.write("---")
             
@@ -519,7 +544,6 @@ with tab2:
                     except Exception as write_err:
                         st.error(f"Failed to update spreadsheet cells: {write_err}")
 
-# --- TAB 3: ADMIN ENGINE ---
 # --- TAB 3: ADMIN ENGINE ---
 with tab3:
     st.subheader("Admin Scoring Panel")
@@ -566,7 +590,6 @@ with tab3:
             st.divider()
             st.markdown("### New Rules Points Preview:")
             
-            # Temporary storage to hold calculated points for the commit step
             calculated_points_delta = {}
             
             for p in participants:
@@ -600,19 +623,16 @@ with tab3:
                     
             st.divider()
             
-            # 🚀 NEW AUTOMATED COMMIT ENGINE BUTTON
             if st.button("💾 Save & Finalize Match Results"):
                 try:
                     with st.spinner("Updating Google Sheets & calculating points live..."):
                         sheet_row_num = int(m_idx) + 2
                         match_headers = [h.strip() for h in matches_worksheet.row_values(1)]
                         
-                        # 1. Flip Status to Completed
                         if "Status" in match_headers:
                             status_idx = match_headers.index("Status") + 1
                             matches_worksheet.update_cell(sheet_row_num, status_idx, "Completed")
                         
-                        # 2. Log Actual Results to matches tab (Safe fallback if columns don't exist yet)
                         if "Actual_Score" in match_headers:
                             score_idx = match_headers.index("Actual_Score") + 1
                             matches_worksheet.update_cell(sheet_row_num, score_idx, actual_score_str)
@@ -620,7 +640,6 @@ with tab3:
                             first_idx = match_headers.index("Actual_FirstScorer") + 1
                             matches_worksheet.update_cell(sheet_row_num, first_idx, str(actual_first_val))
                         
-                        # 3. Update Player Leaderboard Automatically
                         lead_headers = [h.strip() for h in leaderboard_worksheet.row_values(1)]
                         p_col_idx = lead_headers.index("Participant") + 1
                         pts_col_idx = lead_headers.index("Points") + 1
@@ -628,7 +647,6 @@ with tab3:
                         
                         for p, points_to_add in calculated_points_delta.items():
                             if points_to_add > 0:
-                                # Find matching participant row in the spreadsheet
                                 for idx, l_row in enumerate(current_leaderboard_rows):
                                     if str(l_row.get("Participant")).strip() == p:
                                         l_sheet_row = idx + 2
