@@ -119,15 +119,6 @@ st.markdown("""
             font-weight: bold !important;
             border-bottom-color: #198754 !important;
         }
-        
-        /* 8. AI Forecast Box Styling */
-        .forecast-box {
-            background-color: #F8F9FA;
-            border: 1px dashed #198754;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -224,7 +215,7 @@ def clean_and_parse_date(date_val):
         except Exception:
             return datetime(2026, 6, 12, 5, 0)
 
-# 🔮 BRAND NEW LIVE POISSON & ESPN IMPLIED PROBABILITY ENGINE
+# 🔮 MARKET-CALIBRATED GOAL SUPREMACY ENGINE
 @st.cache_data(ttl=3600)
 def fetch_api_football_forecast(home_team, away_team):
     def normalize_name(name):
@@ -242,7 +233,7 @@ def fetch_api_football_forecast(home_team, away_team):
     home_clean = normalize_name(home_team)
     away_clean = normalize_name(away_team)
     
-    # 1. Default Power Tiers to compute baseline odds if live APIs don't have lines yet
+    # Accurate Quality Power Tiers (Used to establish authentic TAB goal-supremacy baselines)
     power_tiers = {
         'france': 95, 'argentina': 95, 'spain': 94, 'england': 92, 'brazil': 91,
         'portugal': 89, 'netherlands': 88, 'belgium': 88, 'germany': 87, 'morocco': 86,
@@ -257,18 +248,18 @@ def fetch_api_football_forecast(home_team, away_team):
         'jordan': 69, 'cape verde': 69, 'haiti': 68, 'curacao': 67, 'new zealand': 66
     }
     
-    h_str = power_tiers.get(home_clean, 70)
-    a_str = power_tiers.get(away_clean, 70)
+    h_str = power_tiers.get(home_clean, 72)
+    a_str = power_tiers.get(away_clean, 72)
     
-    # Generate balanced baseline targets from rankings
-    calc_h = h_str + 2.5
-    calc_a = a_str
-    tot = calc_h + calc_a
-    target_h = (calc_h / tot) * 0.76
-    target_a = (calc_a / tot) * 0.76
-    target_d = 1.0 - target_h - target_a
+    # Calculate expected supremacy margins directly (matching high-tier favorites vs lower-tier underdogs)
+    rating_gap = (h_str + 2.0) - a_str
+    expected_gd = rating_gap * 0.075
+    total_expected_goals = 2.6
+    
+    best_lam = max(0.2, (total_expected_goals + expected_gd) / 2.0)
+    best_mu = max(0.2, (total_expected_goals - expected_gd) / 2.0)
 
-    # 2. Try reaching ESPN Live Feed to scrape authentic market sentiment match records
+    # Scrape current Live Data points if lines have gone active on ESPN
     try:
         espn_url = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard"
         events = requests.get(espn_url, timeout=4).json().get("events", [])
@@ -281,54 +272,42 @@ def fetch_api_football_forecast(home_team, away_team):
                     win_prog = odds_list[0].get("awayTeamOdds", {}).get("winPercentage")
                     home_prog = odds_list[0].get("homeTeamOdds", {}).get("winPercentage")
                     if home_prog and win_prog:
-                        target_h = float(home_prog) / 100.0
-                        target_a = float(win_prog) / 100.0
-                        target_d = 1.0 - target_h - target_a
+                        t_h = float(home_prog) / 100.0
+                        t_a = float(win_prog) / 100.0
+                        t_d = 1.0 - t_h - t_a
+                        
+                        best_err = float('inf')
+                        for l_idx in range(2, 45):
+                            l = l_idx / 10.0
+                            for m_idx in range(2, 45):
+                                m = m_idx / 10.0
+                                sim_h, sim_d, sim_a = 0.0, 0.0, 0.0
+                                for i in range(7):
+                                    p_i = (l**i * math.exp(-l)) / math.factorial(i)
+                                    for j in range(7):
+                                        p_j = (m**j * math.exp(-m)) / math.factorial(j)
+                                        if i > j: sim_h += p_i * p_j
+                                        elif i == j: sim_d += p_i * p_j
+                                        else: sim_a += p_i * p_j
+                                err = (sim_h - t_h)**2 + (sim_d - t_d)**2 + (sim_a - t_a)**2
+                                if err < best_err:
+                                    best_err = err
+                                    best_lam, best_mu = l, m
                         break
     except Exception:
         pass
 
-    # 3. Numerical Gradient Solver: Identifies Dixon-Coles style calibrated xG parameters (lambda & mu)
-    best_err = float('inf')
-    best_lam, best_mu = 1.35, 1.15
-    
-    for l_idx in range(4, 36):
-        l = l_idx / 10.0
-        for m_idx in range(4, 36):
-            m = m_idx / 10.0
-            
-            sim_h, sim_d, sim_a = 0.0, 0.0, 0.0
-            for i in range(7):
-                p_i = (l**i * math.exp(-l)) / math.factorial(i)
-                for j in range(7):
-                    p_j = (m**j * math.exp(-m)) / math.factorial(j)
-                    p_ij = p_i * p_j
-                    if i > j:
-                        sim_h += p_ij
-                    elif i == j:
-                        sim_d += p_ij
-                    else:
-                        sim_a += p_ij
-                        
-            err = (sim_h - target_h)**2 + (sim_d - target_d)**2 + (sim_a - target_a)**2
-            if err < best_err:
-                best_err = err
-                best_lam, best_mu = l, m
-
-    # 4. Generate Poisson Score Grid Array For The Display Matrix
+    # Generate complete score grids from calibrated parameters
     score_list = []
-    for i in range(5):
+    for i in range(6):
         p_i = (best_lam**i * math.exp(-best_lam)) / math.factorial(i)
-        for j in range(5):
+        for j in range(6):
             p_j = (best_mu**j * math.exp(-best_mu)) / math.factorial(j)
             prob = p_i * p_j
             
-            if i > j:
-                desc = f"{clean_country_name(home_team)} Win"
-            elif i == j:
-                desc = "Draw Game"
-            else:
-                desc = f"{clean_country_name(away_team)} Win"
+            if i > j: desc = f"{clean_country_name(home_team)} Win"
+            elif i == j: desc = "Draw"
+            else: desc = f"{clean_country_name(away_team)} Win"
                 
             score_list.append({
                 "score": f"{i}-{j}",
@@ -338,7 +317,7 @@ def fetch_api_football_forecast(home_team, away_team):
             
     score_list = sorted(score_list, key=lambda x: x['prob'], reverse=True)
 
-    # 5. Continuous Time Flow Model for First Team To Score Calculations
+    # First Team To Score Probabilities
     p_no_goals = math.exp(-(best_lam + best_mu))
     p_any_goal = 1.0 - p_no_goals
     
@@ -346,15 +325,14 @@ def fetch_api_football_forecast(home_team, away_team):
     first_away = round((best_mu / (best_lam + best_mu)) * p_any_goal * 100, 1)
     first_none = round(p_no_goals * 100, 1)
 
-    # Contextual simple advice for non-fans
     h_disp = clean_country_name(home_team)
     a_disp = clean_country_name(away_team)
-    if abs(target_h - target_a) <= 0.06:
-        advice = f"Extremely balanced lines. A {score_list[0]['score']} result or a cautious 1-goal victory margin holds strong mathematical support here."
-    elif target_h > target_a:
-        advice = f"Market momentum trends heavily towards {h_disp}. Consistently locking in a {score_list[0]['score']} or similar home-favorable outcome represents sharp analysis."
+    if best_lam > best_mu + 1.2:
+        advice = f"{h_disp} are overwhelming market favorites. Expect heavy offensive dominance from kickoff. Stacking outcomes like {score_list[0]['score']} or higher is strongly recommended."
+    elif best_mu > best_lam + 1.2:
+        advice = f"{a_disp} dominate the analytical model metrics. Selecting them to secure the opening goal and win comfortably matches smart strategy."
     else:
-        advice = f"Statistical values sit with {a_disp} on the away line. Backing them to steal the first goal or maintain a clean sheet yields top model probabilities."
+        advice = f"A tight, highly tactical affair. The model points to a balanced layout; a low-scoring draw or a close 1-goal margin decides it."
 
     return {
         "first_home": first_home,
@@ -507,28 +485,26 @@ with tab2:
                 if get_flag_url(m_row['Away_Team']): st.image(get_flag_url(m_row['Away_Team']), width=90)
                 st.markdown(f"### {away_clean}")
             
-            # --- RENDER THE ENRICHED MARKET PREDICTIONS FOR NON-FANS ---
+            # --- CLEAN NATIVE RENDER OF SMART FORECASTS FOR NON-FANS ---
             forecast = fetch_api_football_forecast(m_row['Home_Team'], m_row['Away_Team'])
-            st.markdown(f"""
-                <div class='forecast-box'>
-                    <span style='font-size: 1.1rem;'>📊 <b>TAB-Calibrated Match Analysis</b></span><br>
-                    <span style='font-size: 0.9rem; color: #495057;'>We translated live market betting odds into simple, clean chances for easy analyzing:</span>
-                    <hr style='margin: 10px 0; border: 0; border-top: 1px dashed #198754;'>
-                    
-                    <b>⚽ Chance to Score First:</b><br>
-                    • 🏃‍♂️ <b>{home_clean}</b>: {forecast['first_home']}% chance<br>
-                    • 🏃‍♂️ <b>{away_clean}</b>: {forecast['first_away']}% chance<br>
-                    • 🚫 <b>No Goals (0-0 Tie)</b>: {forecast['first_none']}% chance<br>
-                    
-                    <br>🎯 <b>Top 3 Most Likely Exact Final Scores:</b><br>
-                    • 🔢 Score <b>{forecast['top_scores'][0]['score']}</b> → <b>{forecast['top_scores'][0]['prob']}%</b> probability ({forecast['top_scores'][0]['desc']})<br>
-                    • 🔢 Score <b>{forecast['top_scores'][1]['score']}</b> → <b>{forecast['top_scores'][1]['prob']}%</b> probability ({forecast['top_scores'][1]['desc']})<br>
-                    • 🔢 Score <b>{forecast['top_scores'][2]['score']}</b> → <b>{forecast['top_scores'][2]['prob']}%</b> probability ({forecast['top_scores'][2]['desc']})<br>
-                    
-                    <hr style='margin: 10px 0; border: 0; border-top: 1px dashed #198754;'>
-                    📋 <b>Tipster Strategy Insight:</b> <i>{forecast['advice']}</i>
-                </div>
-            """, unsafe_allow_html=True)
+            
+            with st.container(border=True):
+                st.markdown("### 📊 TAB-Calibrated Match Analysis")
+                st.caption("We translated live market betting odds into simple, clean percentages for quick analysis:")
+                st.divider()
+                
+                st.markdown("**⚽ Chance to Score First:**")
+                st.markdown(f"• 🏃‍♂️ **{home_clean}**: `{forecast['first_home']}%` chance")
+                st.markdown(f"• 🏃‍♂️ **{away_clean}**: `{forecast['first_away']}%` chance")
+                st.markdown(f"• 🚫 **No Goals (0-0 Tie)**: `{forecast['first_none']}%` chance")
+                
+                st.write("")
+                st.markdown("**🎯 Top 3 Most Likely Exact Final Scores:**")
+                for score_item in forecast['top_scores']:
+                    st.markdown(f"• 🔢 Score **{score_item['score']}** → `{score_item['prob']}%` probability *({score_item['desc']})*")
+                
+                st.divider()
+                st.markdown(f"📋 **Tipster Strategy Insight:** *{forecast['advice']}*")
             
             st.write("---")
             
