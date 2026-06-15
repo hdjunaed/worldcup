@@ -490,7 +490,6 @@ with tab2:
             
             with st.container(border=True):
                 st.markdown("### 📊 Match Analysis")
-                st.caption("We translated live market betting odds into simple, clean percentages for quick analysis:")
                 st.divider()
                 
                 st.markdown("**⚽ Chance to Score First:**")
