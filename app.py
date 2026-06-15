@@ -225,79 +225,155 @@ def fetch_api_football_forecast(home_team, away_team):
             'korea republic': 'south korea', 'republic of korea': 'south korea',
             'czechia': 'czech republic', 'czech rep': 'czech republic',
             'bosnia & herz.': 'bosnia and herzegovina', 'bosnia & herzegovina': 'bosnia and herzegovina',
-            'cote d\'ivoire': "cote d'ivoire", 'ivory coast': "cote d'ivoire",
+            "cote d'ivoire": "cote d'ivoire", 'ivory coast': "cote d'ivoire",
             'congo dr': 'dr congo', 'democratic republic of the congo': 'dr congo'
         }
         return mapping.get(n, n)
 
+    def american_to_prob(odds_str):
+        """Converts an American moneyline string (e.g. '-1200', '+2800') into implied probability."""
+        if not odds_str:
+            return None
+        try:
+            odds = float(str(odds_str).replace('+', ''))
+            if odds > 0:
+                return 100.0 / (odds + 100.0)
+            else:
+                return abs(odds) / (abs(odds) + 100.0)
+        except Exception:
+            return None
+
     home_clean = normalize_name(home_team)
     away_clean = normalize_name(away_team)
     
-    # Accurate Quality Power Tiers (Used to establish authentic TAB goal-supremacy baselines)
+    api_status_log = "Initialization"
+    api_success = False
+
+    # Standard Power-Tier fallback baseline calculation 
     power_tiers = {
         'france': 95, 'argentina': 95, 'spain': 94, 'england': 92, 'brazil': 91,
         'portugal': 89, 'netherlands': 88, 'belgium': 88, 'germany': 87, 'morocco': 86,
-        'croatia': 85, 'uruguay': 84, 'colombia': 83, 'usa': 83, 'japan': 82, 
+        'croatia': 85, 'uruguay': 84, 'norway': 84, 'colombia': 83, 'usa': 83, 'japan': 82, 
         'senegal': 81, 'mexico': 81, 'denmark': 81, 'switzerland': 80, 'south korea': 79,
         'australia': 78, 'turkiye': 78, 'ecuador': 77, 'austria': 77, 'sweden': 77,
         'nigeria': 76, 'algeria': 76, 'egypt': 76, 'scotland': 76, 'canada': 75, 
         'czech republic': 75, 'ukraine': 75, 'poland': 74, 'wales': 74, 'panama': 74, 
         'paraguay': 74, 'ghana': 74, 'serbia': 73, 'tunisia': 73, 'cameroon': 73,
-        'dr congo': 73, 'bosnia and herzegovina': 73, 'cote d\'ivoire': 73, 'qatar': 72, 
+        'dr congo': 73, 'bosnia and herzegovina': 73, "cote d'ivoire": 73, 'qatar': 72, 
         'south africa': 72, 'uzbekistan': 71, 'saudi arabia': 71, 'iraq': 71, 
         'jordan': 69, 'cape verde': 69, 'haiti': 68, 'curacao': 67, 'new zealand': 66
     }
     
-    h_str = power_tiers.get(home_clean, 72)
-    a_str = power_tiers.get(away_clean, 72)
+    h_str = power_tiers.get(home_clean, 74)
+    a_str = power_tiers.get(away_clean, 74)
     
-    # Calculate expected supremacy margins directly (matching high-tier favorites vs lower-tier underdogs)
     rating_gap = (h_str + 2.0) - a_str
     expected_gd = rating_gap * 0.075
-    total_expected_goals = 2.6
+    total_expected_goals = 2.75
     
-    best_lam = max(0.2, (total_expected_goals + expected_gd) / 2.0)
-    best_mu = max(0.2, (total_expected_goals - expected_gd) / 2.0)
+    best_lam = max(0.1, (total_expected_goals + expected_gd) / 2.0)
+    best_mu = max(0.1, (total_expected_goals - expected_gd) / 2.0)
 
-    # Scrape current Live Data points if lines have gone active on ESPN
     try:
         espn_url = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard"
-        events = requests.get(espn_url, timeout=4).json().get("events", [])
-        for ev in events:
-            short_name = ev.get("shortName", "").lower()
-            if (home_clean[:4] in short_name or away_clean[:4] in short_name):
+        response = requests.get(espn_url, timeout=5)
+        
+        if response.status_code == 200:
+            events = response.json().get("events", [])
+            match_found = False
+            
+            for ev in events:
                 competitions = ev.get("competitions", [{}])
-                odds_list = competitions[0].get("odds", [])
-                if odds_list:
-                    win_prog = odds_list[0].get("awayTeamOdds", {}).get("winPercentage")
-                    home_prog = odds_list[0].get("homeTeamOdds", {}).get("winPercentage")
-                    if home_prog and win_prog:
-                        t_h = float(home_prog) / 100.0
-                        t_a = float(win_prog) / 100.0
-                        t_d = 1.0 - t_h - t_a
-                        
-                        best_err = float('inf')
-                        for l_idx in range(2, 45):
-                            l = l_idx / 10.0
-                            for m_idx in range(2, 45):
-                                m = m_idx / 10.0
-                                sim_h, sim_d, sim_a = 0.0, 0.0, 0.0
-                                for i in range(7):
-                                    p_i = (l**i * math.exp(-l)) / math.factorial(i)
-                                    for j in range(7):
-                                        p_j = (m**j * math.exp(-m)) / math.factorial(j)
-                                        if i > j: sim_h += p_i * p_j
-                                        elif i == j: sim_d += p_i * p_j
-                                        else: sim_a += p_i * p_j
-                                err = (sim_h - t_h)**2 + (sim_d - t_d)**2 + (sim_a - t_a)**2
-                                if err < best_err:
-                                    best_err = err
-                                    best_lam, best_mu = l, m
-                        break
-    except Exception:
-        pass
+                if not competitions:
+                    continue
+                
+                competitors = competitions[0].get("competitors", [])
+                api_home_name = api_home_disp = api_home_abbr = ""
+                api_away_name = api_away_disp = api_away_abbr = ""
+                
+                for comp in competitors:
+                    role = comp.get("homeAway")
+                    team_obj = comp.get("team", {})
+                    t_name = team_obj.get("name", "").lower().strip()
+                    t_disp = team_obj.get("displayName", "").lower().strip()
+                    t_abbr = team_obj.get("abbreviation", "").lower().strip()
+                    
+                    if role == "home":
+                        api_home_name, api_home_disp, api_home_abbr = t_name, t_disp, t_abbr
+                    elif role == "away":
+                        api_away_name, api_away_disp, api_away_abbr = t_name, t_disp, t_abbr
 
-    # Generate complete score grids from calibrated parameters
+                # Match checking across all standard naming scopes
+                all_identifiers = [api_home_name, api_home_disp, api_home_abbr, api_away_name, api_away_disp, api_away_abbr]
+                
+                if home_clean in all_identifiers and away_clean in all_identifiers:
+                    match_found = True
+                    odds_list = competitions[0].get("odds", [])
+                    
+                    if odds_list:
+                        moneyline = odds_list[0].get("moneyline", {})
+                        
+                        # Navigate exact path verified in api.txt
+                        h_odds_raw = moneyline.get("home", {}).get("close", {}).get("odds")
+                        a_odds_raw = moneyline.get("away", {}).get("close", {}).get("odds")
+                        d_odds_raw = moneyline.get("draw", {}).get("close", {}).get("odds")
+                        
+                        p_h = american_to_prob(h_odds_raw)
+                        p_a = american_to_prob(a_odds_raw)
+                        p_d = american_to_prob(d_odds_raw)
+                        
+                        if p_h is not None and p_a is not None and p_d is not None:
+                            # Align odds dynamically based on the API designated home team
+                            if home_clean in [api_home_name, api_home_disp, api_home_abbr]:
+                                t_h_raw = p_h
+                                t_a_raw = p_a
+                            else:
+                                t_h_raw = p_a
+                                t_a_raw = p_h
+                            t_d_raw = p_d
+                            
+                            # Clean normalization to eliminate bookmaker vig
+                            total_p = t_h_raw + t_a_raw + t_d_raw
+                            t_h = t_h_raw / total_p
+                            t_a = t_a_raw / total_p
+                            t_d = t_d_raw / total_p
+                            
+                            # Execute the standard multi-variable optimization
+                            best_err = float('inf')
+                            for l_idx in range(2, 45):
+                                l = l_idx / 10.0
+                                for m_idx in range(2, 45):
+                                    m = m_idx / 10.0
+                                    sim_h, sim_d, sim_a = 0.0, 0.0, 0.0
+                                    for i in range(7):
+                                        p_i = (l**i * math.exp(-l)) / math.factorial(i)
+                                        for j in range(7):
+                                            p_j = (m**j * math.exp(-m)) / math.factorial(j)
+                                            if i > j: sim_h += p_i * p_j
+                                            elif i == j: sim_d += p_i * p_j
+                                            else: sim_a += p_i * p_j
+                                    err = (sim_h - t_h)**2 + (sim_d - t_d)**2 + (sim_a - t_a)**2
+                                    if err < best_err:
+                                        best_err = err
+                                        best_lam, best_mu = l, m
+                            
+                            api_success = True
+                            api_status_log = f"🟢 SUCCESS: Real-time DraftKings odds parsed ({h_odds_raw} / {d_odds_raw} / {a_odds_raw}) and converted smoothly."
+                            break
+                        else:
+                            api_status_log = "条 SEMI-FALLBACK: Match located, but moneyline elements failed conversion loops."
+                    else:
+                        api_status_log = "🟡 SEMI-FALLBACK: Match located, but no nested odds structures were accessible."
+            
+            if not match_found:
+                api_status_log = f"🟠 FALLBACK: API Online, but no matchups listing '{home_clean}' vs '{away_clean}' found today."
+        else:
+            api_status_log = f"🔴 FALLBACK: Remote API target returned status code: {response.status_code}."
+            
+    except Exception as e:
+        api_status_log = f"🔴 FALLBACK: Integration parsing exception thrown: {str(e)}"
+
+    # Generate layout predictions
     score_list = []
     for i in range(6):
         p_i = (best_lam**i * math.exp(-best_lam)) / math.factorial(i)
@@ -317,7 +393,6 @@ def fetch_api_football_forecast(home_team, away_team):
             
     score_list = sorted(score_list, key=lambda x: x['prob'], reverse=True)
 
-    # First Team To Score Probabilities
     p_no_goals = math.exp(-(best_lam + best_mu))
     p_any_goal = 1.0 - p_no_goals
     
@@ -327,19 +402,21 @@ def fetch_api_football_forecast(home_team, away_team):
 
     h_disp = clean_country_name(home_team)
     a_disp = clean_country_name(away_team)
-    if best_lam > best_mu + 1.2:
-        advice = f"{h_disp} are overwhelming market favorites. Expect heavy offensive dominance from kickoff. Stacking outcomes like {score_list[0]['score']} or higher is strongly recommended."
-    elif best_mu > best_lam + 1.2:
-        advice = f"{a_disp} dominate the analytical model metrics. Selecting them to secure the opening goal and win comfortably matches smart strategy."
+    if best_lam > best_mu + 0.8:
+        advice = f"{h_disp} are heavy clear metrics favorites via active markets."
+    elif best_mu > best_lam + 0.8:
+        advice = f"{a_disp} showcase strong value trends via active analytical models."
     else:
-        advice = f"A tight, highly tactical affair. The model points to a balanced layout; a low-scoring draw or a close 1-goal margin decides it."
+        advice = f"A structurally tight match. Expect a highly competitive layout."
 
     return {
         "first_home": first_home,
         "first_away": first_away,
         "first_none": first_none,
         "top_scores": score_list[:3],
-        "advice": advice
+        "advice": advice,
+        "api_log": api_status_log,
+        "is_live_api": api_success
     }
 
 # 🔐 Establish Direct Google Sheets Connection Engine
