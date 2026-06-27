@@ -522,7 +522,8 @@ with tab3:
                     if p_first.lower() == str(actual_first_val).lower() and p_first != "": earned += 10
                     calculated_points_delta[p] = earned
                     
-                    st.write(f"**{p}:** {earned} pts (Predicted {p_score} & {clean_country_name(p_first)})")
+                    hype = "🔥 MAXED OUT!" if earned == 20 else ""
+                    st.write(f"**{p}:** {earned} pts {hype} (Predicted {p_score} & {clean_country_name(p_first)})")
 
             # --- KNOCKOUT STAGE ADMIN ---
             else:
@@ -548,7 +549,8 @@ with tab3:
                     if p_qual.lower() == str(actual_qual_val).lower() and p_qual != "": earned += 10
                     calculated_points_delta[p] = earned
                     
-                    st.write(f"**{p}:** {earned} pts (Preds: {clean_country_name(p_first)} | Pens: {p_pen} | Adv: {clean_country_name(p_qual)})")
+                    hype = "🚀 PERFECT SCORE!" if earned == 30 else ""
+                    st.write(f"**{p}:** {earned} pts {hype} (Preds: {clean_country_name(p_first)} | Pens: {p_pen} | Adv: {clean_country_name(p_qual)})")
 
             st.divider()
 
