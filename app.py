@@ -232,7 +232,8 @@ def generate_kid_friendly_narrative(home, away, qualify_home, qualify_away, prog
             contents=prompt,
             config={
                 "temperature": 1.1,   # higher = more variety, less "scripted" feel
-                "max_output_tokens": 200,
+                "max_output_tokens": 400,
+                "thinking_config": {"thinking_budget": 0},  # turn off internal thinking so tokens go to the actual reply
             }
         )
         return response.text.strip()
