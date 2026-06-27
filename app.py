@@ -391,11 +391,10 @@ with tab2:
                         st.error("This match has already kicked off! Changing predictions is locked.")
                     elif p_first == "Select option...":
                         st.error("Please explicitly declare who scores first!")
-                    elif p_first == home_clean and p_home_score == 0:
+                    elif p_first.strip().lower() == home_clean.strip().lower() and p_home_score == 0:
                         st.error(f"❌ You cannot pick {home_clean} to score first if they have 0 goals!")
-                    elif p_first == away_clean and p_away_score == 0:
+                    elif p_first.strip().lower() == away_clean.strip().lower() and p_away_score == 0:
                         st.error(f"❌ You cannot pick {away_clean} to score first if they have 0 goals!")
-                    # END OF NEW VALIDATION
                     elif p_home_score == 0 and p_away_score == 0 and p_first != "No Goal":
                         st.error("❌ If your exact score is 0-0, your first scorer must be 'No Goal'!")
                     elif (p_home_score > 0 or p_away_score > 0) and p_first == "No Goal":
