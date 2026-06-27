@@ -8,6 +8,9 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from google.oauth2.service_account import Credentials
 
+# --- NEW IMPORT FOR GOOGLE AI STUDIO ---
+from google import genai
+
 st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="wide")
 
 # --- CUSTOM CSS (Clean White Theme & Ticker) ---
@@ -105,6 +108,13 @@ st.markdown("""
             padding: 20px;
             margin-bottom: 15px;
         }
+        .story-card {
+            background-color: #e8f5e9;
+            border-left: 5px solid #198754;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -188,6 +198,42 @@ def get_match_stage(match_id):
     except:
         return "Group"
 
+# ==========================================
+# GOOGLE AI STUDIO NARRATIVE GENERATOR
+# ==========================================
+@st.cache_data(ttl=1800) # Caches the story for 30 mins so it doesn't spam the API
+def generate_kid_friendly_narrative(home, away, qualify_home, qualify_away, progression, first_scorer):
+    prompt = f"""
+    You are a super fun, highly energetic Australian sports commentator doing a pre-match preview for kids about a massive World Cup Knockout match. 
+    You need to look at the statistical betting odds data and turn it into an exciting, easy-to-understand storyline.
+    
+    MATCH DETAILS:
+    - Matchup: {home} vs {away}
+    - Odds to Qualify (Lower means they are the favorite): {home} ({qualify_home}) vs {away} ({qualify_away})
+    - Method of Progression Market: {progression}
+    - Top First Goalscorer Odds: {first_scorer}
+    
+    CRITICAL RULES:
+    1. Speak directly to the kids like a hyped-up Aussie (use clean slang like 'mate', 'cracking match', 'absolute ripper', 'heaps good', 'reckon').
+    2. Write exactly 2 or 3 dynamic, fun sentences. Do NOT make it boring or repetitive.
+    3. NEVER mention technical terms like "JSON", "Spreadsheet", "Decimal Odds", or the actual numbers themselves. Translate the numbers into a story! (e.g., "The experts reckon Jonathan David is red-hot to blast the first goal in!").
+    4. Mention who the favorite to win is, who might score first, and if the data suggests a sneaky chance of a penalty shootout.
+    
+    Write the short match story now:
+    """
+    try:
+        # Initialize client securely using the API key in Streamlit secrets
+        client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
+        
+        # Call the lightweight and fast Gemini model
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt
+        )
+        return response.text.strip()
+    except Exception as e:
+        return f"Hold onto your hats! The stats van is running late, but {home} vs {away} is going to be an absolute ripper of a match! ⚽"
+
 # --- DATABASE CONNECTION ---
 @st.cache_resource(ttl=600)
 def get_gspread_client():
@@ -209,7 +255,6 @@ try:
     # Force a fresh pull of all worksheets
     all_worksheets = {ws.title.strip().lower(): ws for ws in sh.worksheets()}
     
-    # DIAGNOSTIC CHECK: 
     if "knockout_predictions" not in all_worksheets:
         st.error(f"🔍 I still can't see the tab! Here are the tabs I DO see: {list(all_worksheets.keys())}")
         st.stop()
@@ -218,9 +263,13 @@ try:
     knockout_worksheet = all_worksheets["knockout_predictions"]
     leaderboard_worksheet = all_worksheets["leaderboard"]
     
+    # NEW: Safely pull the Match_Odds_Feed if it exists
+    odds_worksheet = all_worksheets.get("match_odds_feed")
+    
     matches_df = pd.DataFrame(matches_worksheet.get_all_records())
     knockout_df = pd.DataFrame(knockout_worksheet.get_all_records())
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
+    odds_df = pd.DataFrame(odds_worksheet.get_all_records()) if odds_worksheet else pd.DataFrame()
 
 except Exception as e:
     st.error(f"❌ Connection Blocked: {e}")
@@ -418,6 +467,30 @@ with tab2:
                 # KNOCKOUT STAGE 3-QUESTION FORMAT
                 st.info("🏆 Knockout Stage: 30 Points Total (10 pts per correct answer)")
                 
+                # --- GOOGLE AI STUDIO NARRATIVE INJECTION ---
+                if not odds_df.empty:
+                    # Find the odds row for this match ID
+                    match_odds_row = odds_df[odds_df['Match_ID'].astype(str) == str(m_id)]
+                    if not match_odds_row.empty:
+                        odds_data = match_odds_row.iloc[0]
+                        
+                        # Only run the AI if the GOOGLE_API_KEY is present in secrets
+                        if "GOOGLE_API_KEY" in st.secrets:
+                            with st.spinner("🎤 Crossing to the commentary box for the pre-match scoop..."):
+                                narrative = generate_kid_friendly_narrative(
+                                    home_clean, 
+                                    away_clean, 
+                                    str(odds_data.get('Qualify_Home', '?')), 
+                                    str(odds_data.get('Qualify_Away', '?')),
+                                    str(odds_data.get('Progression_Data', 'No data')),
+                                    str(odds_data.get('First_Scorer_Data', 'No data'))
+                                )
+                            # Display it in a styled custom box
+                            st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative}</div>", unsafe_allow_html=True)
+                        else:
+                            st.warning("⚠️ Commentary offline. Missing GOOGLE_API_KEY in Streamlit secrets.")
+                # --------------------------------------
+
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
                 st.markdown("#### ⚽ Who scores first?")
                 q1_first = st.radio("Select Team:", [home_clean, away_clean, "No Goal (0-0)"], index=None, key=f"q1_{m_id}")
