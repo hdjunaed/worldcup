@@ -189,7 +189,7 @@ def get_match_stage(match_id):
         return "Group"
 
 # --- DATABASE CONNECTION ---
-@st.cache_resource(ttl=3)
+@st.cache_resource(ttl=600)
 def get_gspread_client():
     try:
         secret_info = st.secrets["connections"]["gsheets"]
