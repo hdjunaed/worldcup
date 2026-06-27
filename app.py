@@ -214,12 +214,17 @@ def generate_kid_friendly_narrative(home, away, qualify_home, qualify_away, prog
     - Players most likely to score first, with odds: {first_scorer}
 
     RULES:
+    - The "How the match might be decided" data has SIX odds: each team x Normal Time / Extra Time / Penalties.
+      Lower odds = more likely. Find the single lowest number out of all six - that is the most likely outcome
+      (which team, and which stage). Only mention a penalty shootout as a real possibility if one or both
+      Penalties odds are close to the lowest number overall. If the Penalties odds are clearly much higher than
+      the Normal Time odds, do NOT mention penalties at all, or explicitly say it's unlikely to go that far.
     - Work out for yourself from the numbers above who the real favourite is, who is most likely to score first,
       and whether penalties look like a real chance - don't just copy a template, base it on the actual odds.
     - Write 2-3 short, punchy sentences in casual Aussie kid-commentator style (e.g. "mate", "ripper", "reckon",
       "heaps good") - vary your wording and sentence order every time so it never reads the same way twice.
-    - Naturally weave in: the favourite to qualify, the player tipped to score first, and a quick mention of
-      penalty-shootout chances if the odds suggest it's plausible.
+    - Naturally weave in: the favourite to qualify and the stage they're expected to win it in (Normal Time /
+      Extra Time / Penalties), and the player tipped to score first.
     - Never mention odds, numbers, "data", "stats", "JSON" or anything technical - turn it all into a story.
     - No emojis other than the occasional single one at the end. No markdown.
 
