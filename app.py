@@ -204,34 +204,42 @@ def get_match_stage(match_id):
 @st.cache_data(ttl=1800) # Caches the story for 30 mins so it doesn't spam the API
 def generate_kid_friendly_narrative(home, away, qualify_home, qualify_away, progression, first_scorer):
     prompt = f"""
-    You are a super fun, highly energetic Australian sports commentator doing a pre-match preview for kids about a massive World Cup Knockout match. 
-    You need to look at the statistical betting odds data and turn it into an exciting, easy-to-understand storyline.
-    
-    MATCH DETAILS:
-    - Matchup: {home} vs {away}
-    - Odds to Qualify (Lower means they are the favorite): {home} ({qualify_home}) vs {away} ({qualify_away})
-    - Method of Progression Market: {progression}
-    - Top First Goalscorer Odds: {first_scorer}
-    
-    CRITICAL RULES:
-    1. Speak directly to the kids like a hyped-up Aussie (use clean slang like 'mate', 'cracking match', 'absolute ripper', 'heaps good', 'reckon').
-    2. Write exactly 2 or 3 dynamic, fun sentences. Do NOT make it boring or repetitive.
-    3. NEVER mention technical terms like "JSON", "Spreadsheet", "Decimal Odds", or the actual numbers themselves. Translate the numbers into a story! (e.g., "The experts reckon Jonathan David is red-hot to blast the first goal in!").
-    4. Mention who the favorite to win is, who might score first, and if the data suggests a sneaky chance of a penalty shootout.
-    
-    Write the short match story now:
+    You are a fun, casual, kid-friendly Aussie sports commentator. Write a short pre-match scoop for kids about
+    this World Cup knockout match, based on the prediction-market data below. This is for a kids' prediction game
+    where players guess: (1) who scores first, (2) whether it goes to a penalty shootout, (3) who qualifies.
+
+    MATCH: {home} vs {away}
+    - Chance to qualify (lower number = stronger favourite): {home} = {qualify_home}, {away} = {qualify_away}
+    - How the match might be decided (Normal Time / Extra Time / Penalties), with odds per outcome: {progression}
+    - Players most likely to score first, with odds: {first_scorer}
+
+    RULES:
+    - Work out for yourself from the numbers above who the real favourite is, who is most likely to score first,
+      and whether penalties look like a real chance - don't just copy a template, base it on the actual odds.
+    - Write 2-3 short, punchy sentences in casual Aussie kid-commentator style (e.g. "mate", "ripper", "reckon",
+      "heaps good") - vary your wording and sentence order every time so it never reads the same way twice.
+    - Naturally weave in: the favourite to qualify, the player tipped to score first, and a quick mention of
+      penalty-shootout chances if the odds suggest it's plausible.
+    - Never mention odds, numbers, "data", "stats", "JSON" or anything technical - turn it all into a story.
+    - No emojis other than the occasional single one at the end. No markdown.
+
+    Write the match story now:
     """
     try:
-        # Initialize client securely using the API key in Streamlit secrets
         client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-        
-        # Call the lightweight and fast Gemini model
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config={
+                "temperature": 1.1,   # higher = more variety, less "scripted" feel
+                "max_output_tokens": 200,
+            }
         )
         return response.text.strip()
     except Exception as e:
+        # TEMP DEBUG: surfacing the real error so we can see exactly what's failing.
+        # Remove this st.error line once confirmed working, and revert to a quiet fallback.
+        st.error(f"DEBUG - Gemini call failed: {repr(e)}")
         return f"Hold onto your hats! The stats van is running late, but {home} vs {away} is going to be an absolute ripper of a match! ⚽"
 
 # --- DATABASE CONNECTION ---
