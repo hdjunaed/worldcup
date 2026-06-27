@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytz
 import gspread
 import re
+import random
 import urllib.request
 import xml.etree.ElementTree as ET
 from google.oauth2.service_account import Credentials
@@ -277,22 +278,31 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
 
         def top_scorer_for_team(team_clean):
             team_rows = [e for e in scorer_entries if clean_country_name(e["country"]) == team_clean]
-            return max(team_rows, key=lambda x: x["pct"]) if team_rows else None
+            team_rows.sort(key=lambda x: x["pct"], reverse=True)
+            return team_rows
 
-        home_top = top_scorer_for_team(home)
-        away_top = top_scorer_for_team(away)
+        home_ranked = top_scorer_for_team(home)
+        away_ranked = top_scorer_for_team(away)
         overall_top = max(scorer_entries, key=lambda x: x["pct"])
 
-        facts["home_top_scorer"] = home_top["name"] if home_top else None
-        facts["home_top_scorer_pct"] = home_top["pct"] if home_top else None
-        facts["away_top_scorer"] = away_top["name"] if away_top else None
-        facts["away_top_scorer_pct"] = away_top["pct"] if away_top else None
+        facts["home_top_scorer"] = home_ranked[0]["name"] if home_ranked else None
+        facts["home_top_scorer_pct"] = home_ranked[0]["pct"] if home_ranked else None
+        facts["home_second_scorer"] = home_ranked[1]["name"] if len(home_ranked) > 1 else None
+        facts["home_second_scorer_pct"] = home_ranked[1]["pct"] if len(home_ranked) > 1 else None
+
+        facts["away_top_scorer"] = away_ranked[0]["name"] if away_ranked else None
+        facts["away_top_scorer_pct"] = away_ranked[0]["pct"] if away_ranked else None
+        facts["away_second_scorer"] = away_ranked[1]["name"] if len(away_ranked) > 1 else None
+        facts["away_second_scorer_pct"] = away_ranked[1]["pct"] if len(away_ranked) > 1 else None
+
         facts["overall_top_scorer_name"] = overall_top["name"]
         facts["overall_top_scorer_country"] = overall_top["country"]
         facts["overall_top_scorer_pct"] = overall_top["pct"]
     else:
         facts["home_top_scorer"] = facts["away_top_scorer"] = None
         facts["home_top_scorer_pct"] = facts["away_top_scorer_pct"] = None
+        facts["home_second_scorer"] = facts["away_second_scorer"] = None
+        facts["home_second_scorer_pct"] = facts["away_second_scorer_pct"] = None
         facts["overall_top_scorer_name"] = facts["overall_top_scorer_country"] = facts["overall_top_scorer_pct"] = None
 
     return facts
@@ -304,6 +314,8 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
 def generate_kid_friendly_narrative(facts: dict):
     home, away = facts["home"], facts["away"]
 
+    scorer_tier = facts.get("scorer_tier", 1)
+
     facts_block = f"""
     - Chance to qualify: {home} {facts['qualify_home_pct']}% vs {away} {facts['qualify_away_pct']}%
     - {home}'s best path to winning this match: {facts['home_best_stage']} ({facts['home_best_stage_pct']}% chance)
@@ -312,6 +324,22 @@ def generate_kid_friendly_narrative(facts: dict):
     - {home}'s most likely first scorer: {facts['home_top_scorer']} ({facts['home_top_scorer_pct']}% chance)
     - {away}'s most likely first scorer: {facts['away_top_scorer']} ({facts['away_top_scorer_pct']}% chance)
     """
+    if scorer_tier == 2 and facts.get("home_second_scorer") and facts.get("away_second_scorer"):
+        facts_block += f"""
+    - {home}'s second most likely first scorer: {facts['home_second_scorer']} ({facts['home_second_scorer_pct']}% chance)
+    - {away}'s second most likely first scorer: {facts['away_second_scorer']} ({facts['away_second_scorer_pct']}% chance)
+    """
+
+    scorer_instruction = (
+        f"""Both teams' most likely first scorer, with their percentage - e.g. "{facts.get('home_top_scorer')} is
+           favoured to score first at {facts.get('home_top_scorer_pct')}%, just ahead of {facts.get('away_top_scorer')}
+           at {facts.get('away_top_scorer_pct')}%" (or similar, in your own words)."""
+        if scorer_tier == 1 or not facts.get("home_second_scorer")
+        else
+        f"""Each team's TOP TWO most likely first scorers, with percentages - mention {facts.get('home_top_scorer')}
+           and {facts.get('home_second_scorer')} for {home}, and {facts.get('away_top_scorer')} and
+           {facts.get('away_second_scorer')} for {away}, each with their percentage chance."""
+    )
 
     prompt = f"""
     You are a fun, casual, kid-friendly Aussie sports commentator. Write a short, exciting pre-match scoop for kids
@@ -330,9 +358,7 @@ def generate_kid_friendly_narrative(facts: dict):
         2. Both teams' best path to winning (their stage + percentage) - e.g. compare {home}'s best path against
            {away}'s best path. Only call out a penalty shootout as a real chance if "Penalties" is actually one of
            the best-path stages mentioned above for either team - otherwise don't bring penalties up.
-        3. Both teams' most likely first scorer, with their percentage - e.g. "{facts.get('home_top_scorer')} is
-           favoured to score first at {facts.get('home_top_scorer_pct')}%, just ahead of {facts.get('away_top_scorer')}
-           at {facts.get('away_top_scorer_pct')}%" (or similar, in your own words).
+        3. {scorer_instruction}
     - EVERY time you mention a player's name, their country must appear with it in the same breath - either as
       "PlayerName (Country)", or "PlayerName for Country", or "Country's PlayerName" - pick whichever reads most
       naturally in the sentence, but never write a player's name on its own without their country attached
@@ -620,6 +646,10 @@ with tab2:
                                     str(odds_data.get('Progression_Data', 'No data')),
                                     str(odds_data.get('First_Scorer_Data', 'No data'))
                                 )
+                                # Randomly decide whether this story mentions just the top scorer per team, or
+                                # also the 2nd-best - keeps the 2nd/3rd odds you enter actually useful sometimes,
+                                # without making every single story longer.
+                                match_facts["scorer_tier"] = random.choice([1, 2])
                                 narrative = generate_kid_friendly_narrative(match_facts)
                             # Convert markdown **bold** to real <strong> tags - markdown syntax does NOT get
                             # re-parsed once it's inside a raw HTML block, so we have to do this conversion
