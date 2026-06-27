@@ -199,44 +199,151 @@ def get_match_stage(match_id):
         return "Group"
 
 # ==========================================
+# ODDS -> FAIR PROBABILITY ENGINE
+# (No gambling odds shown to kids - we convert everything to clean percentages
+#  and always surface BOTH sides, not just the single favourite.)
+# ==========================================
+def _implied_normalised(raw_odds_list):
+    """Takes a list of decimal odds, returns normalised fair probabilities (removes bookmaker margin)."""
+    implied = [1.0 / o for o in raw_odds_list]
+    total = sum(implied)
+    return [round((i / total) * 100, 1) for i in implied]
+
+def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds, progression_str, first_scorer_str):
+    facts = {"home": home, "away": away}
+
+    # --- 1. Qualify probabilities (2-way) ---
+    try:
+        q_home_odds = float(qualify_home_odds)
+        q_away_odds = float(qualify_away_odds)
+        q_probs = _implied_normalised([q_home_odds, q_away_odds])
+        facts["qualify_home_pct"] = q_probs[0]
+        facts["qualify_away_pct"] = q_probs[1]
+    except Exception:
+        facts["qualify_home_pct"] = None
+        facts["qualify_away_pct"] = None
+
+    # --- 2. Progression data: "Team Stage Odds, Team Stage Odds, ..." (6 entries) ---
+    progression_entries = []  # list of dicts: team, stage, odds
+    for chunk in str(progression_str).split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        m = re.match(r"^(.*?)\s+(Normal Time|Extra Time|Penalties)\s+([\d.]+)$", chunk)
+        if m:
+            team_raw, stage, odds = m.group(1).strip(), m.group(2).strip(), float(m.group(3))
+            progression_entries.append({"team": team_raw, "stage": stage, "odds": odds})
+
+    if progression_entries:
+        probs = _implied_normalised([e["odds"] for e in progression_entries])
+        for e, p in zip(progression_entries, probs):
+            e["pct"] = p
+
+        def best_for_team(team_clean):
+            team_rows = [e for e in progression_entries if clean_country_name(e["team"]) == team_clean]
+            return max(team_rows, key=lambda x: x["pct"]) if team_rows else None
+
+        home_best = best_for_team(home)
+        away_best = best_for_team(away)
+        overall_best = max(progression_entries, key=lambda x: x["pct"])
+
+        facts["home_best_stage"] = home_best["stage"] if home_best else None
+        facts["home_best_stage_pct"] = home_best["pct"] if home_best else None
+        facts["away_best_stage"] = away_best["stage"] if away_best else None
+        facts["away_best_stage_pct"] = away_best["pct"] if away_best else None
+        facts["overall_favourite_team"] = overall_best["team"]
+        facts["overall_favourite_stage"] = overall_best["stage"]
+        facts["overall_favourite_pct"] = overall_best["pct"]
+    else:
+        facts["home_best_stage"] = facts["away_best_stage"] = None
+        facts["home_best_stage_pct"] = facts["away_best_stage_pct"] = None
+        facts["overall_favourite_team"] = facts["overall_favourite_stage"] = facts["overall_favourite_pct"] = None
+
+    # --- 3. First scorer data: "Name (Country) Odds, Name (Country) Odds, ..." ---
+    scorer_entries = []
+    for chunk in str(first_scorer_str).split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        m = re.match(r"^(.*?)\s+\(([^)]+)\)\s+([\d.]+)$", chunk)
+        if m:
+            name, country, odds = m.group(1).strip(), m.group(2).strip(), float(m.group(3))
+            scorer_entries.append({"name": name, "country": country, "odds": odds})
+
+    if scorer_entries:
+        probs = _implied_normalised([e["odds"] for e in scorer_entries])
+        for e, p in zip(scorer_entries, probs):
+            e["pct"] = p
+
+        def top_scorer_for_team(team_clean):
+            team_rows = [e for e in scorer_entries if clean_country_name(e["country"]) == team_clean]
+            return max(team_rows, key=lambda x: x["pct"]) if team_rows else None
+
+        home_top = top_scorer_for_team(home)
+        away_top = top_scorer_for_team(away)
+        overall_top = max(scorer_entries, key=lambda x: x["pct"])
+
+        facts["home_top_scorer"] = home_top["name"] if home_top else None
+        facts["home_top_scorer_pct"] = home_top["pct"] if home_top else None
+        facts["away_top_scorer"] = away_top["name"] if away_top else None
+        facts["away_top_scorer_pct"] = away_top["pct"] if away_top else None
+        facts["overall_top_scorer_name"] = overall_top["name"]
+        facts["overall_top_scorer_country"] = overall_top["country"]
+        facts["overall_top_scorer_pct"] = overall_top["pct"]
+    else:
+        facts["home_top_scorer"] = facts["away_top_scorer"] = None
+        facts["home_top_scorer_pct"] = facts["away_top_scorer_pct"] = None
+        facts["overall_top_scorer_name"] = facts["overall_top_scorer_country"] = facts["overall_top_scorer_pct"] = None
+
+    return facts
+
+# ==========================================
 # GOOGLE AI STUDIO NARRATIVE GENERATOR
 # ==========================================
 @st.cache_data(ttl=1800) # Caches the story for 30 mins so it doesn't spam the API
-def generate_kid_friendly_narrative(home, away, qualify_home, qualify_away, progression, first_scorer):
+def generate_kid_friendly_narrative(facts: dict):
+    home, away = facts["home"], facts["away"]
+
+    facts_block = f"""
+    - Chance to qualify: {home} {facts['qualify_home_pct']}% vs {away} {facts['qualify_away_pct']}%
+    - {home}'s best path to winning this match: {facts['home_best_stage']} ({facts['home_best_stage_pct']}% chance)
+    - {away}'s best path to winning this match: {facts['away_best_stage']} ({facts['away_best_stage_pct']}% chance)
+    - Overall single most likely result: {facts['overall_favourite_team']} winning in {facts['overall_favourite_stage']} ({facts['overall_favourite_pct']}% chance)
+    - {home}'s most likely first scorer: {facts['home_top_scorer']} ({facts['home_top_scorer_pct']}% chance)
+    - {away}'s most likely first scorer: {facts['away_top_scorer']} ({facts['away_top_scorer_pct']}% chance)
+    """
+
     prompt = f"""
-    You are a fun, casual, kid-friendly Aussie sports commentator. Write a short pre-match scoop for kids about
-    this World Cup knockout match, based on the prediction-market data below. This is for a kids' prediction game
-    where players guess: (1) who scores first, (2) whether it goes to a penalty shootout, (3) who qualifies.
+    You are a fun, casual, kid-friendly Aussie sports commentator. Write a short, exciting pre-match scoop for kids
+    about this World Cup knockout match. This is for a kids' prediction game where players guess: (1) who scores
+    first, (2) whether it goes to a penalty shootout, (3) who qualifies.
 
     MATCH: {home} vs {away}
-    - Chance to qualify (lower number = stronger favourite): {home} = {qualify_home}, {away} = {qualify_away}
-    - How the match might be decided (Normal Time / Extra Time / Penalties), with odds per outcome: {progression}
-    - Players most likely to score first, with odds: {first_scorer}
+
+    Here are the FINAL, ALREADY-CALCULATED percentage facts you must use (do not do any maths yourself, do not
+    change these numbers or invent new ones, just narrate them in a fun way):
+    {facts_block}
 
     RULES:
-    - The "How the match might be decided" data has SIX odds: each team x Normal Time / Extra Time / Penalties.
-      Lower odds = more likely. Find the single lowest number out of all six - that is the most likely outcome
-      (which team, and which stage). Only mention a penalty shootout as a real possibility if one or both
-      Penalties odds are close to the lowest number overall. If the Penalties odds are clearly much higher than
-      the Normal Time odds, do NOT mention penalties at all, or explicitly say it's unlikely to go that far.
-    - The first-scorer data is formatted as "Player Name (Country)". When you mention a player, ALWAYS keep
-      their country in brackets right after their name, exactly like that, e.g. "Vinicius Junior (Brazil)" -
-      never drop the bracket, since the kids reading this won't necessarily know which country each player
-      plays for.
-    - Work out for yourself from the numbers above who the real favourite is, who is most likely to score first,
-      and whether penalties look like a real chance - don't just copy a template, base it on the actual odds.
-    - Write 2-3 short, punchy sentences in casual Aussie kid-commentator style.
+    - You MUST mention BOTH sides for every category, never just the favourite alone:
+        1. Both teams' chance to qualify (use both percentages).
+        2. Both teams' best path to winning (their stage + percentage) - e.g. compare {home}'s best path against
+           {away}'s best path. Only call out a penalty shootout as a real chance if "Penalties" is actually one of
+           the best-path stages mentioned above for either team - otherwise don't bring penalties up.
+        3. Both teams' most likely first scorer, with their percentage - e.g. "{facts.get('home_top_scorer')} is
+           favoured to score first at {facts.get('home_top_scorer_pct')}%, just ahead of {facts.get('away_top_scorer')}
+           at {facts.get('away_top_scorer_pct')}%" (or similar, in your own words).
+    - Use the percentages given, e.g. "32%", as the way of expressing chance - never the words "odds", "bet",
+      "stake", "wager", "favourite to win money", or anything gambling-related. Frame it purely as "chance to
+      qualify" / "favoured to score first" / "most likely outcome" etc, kid-friendly.
+    - Use **bold** (markdown) around player names, team names, and key percentages to make it pop visually.
+    - Use 3-5 relevant emojis scattered through the text (⚽🏆🔥🎯👀 etc) - make it feel hyped and fun, not flat.
+    - Write 3-4 short, punchy sentences in casual Aussie kid-commentator style.
     - DO NOT always open with the same greeting or the same slang. Randomly pick a different way to open and a
-      different way to refer to "the experts" each time - mix it up across calls, never default to the same
-      pair of phrases. For example, vary your opener among styles like: a hyped exclamation, a direct question
-      to the reader, jumping straight into the action, or a quick scene-setting line - invent your own wording,
-      don't just rotate through a fixed list. Likewise vary how you refer to the odds/experts (e.g. "the form
-      says", "smart money's on", "if the numbers are right", "punters reckon") - never reuse the same expression
-      two matches in a row.
-    - Naturally weave in: the favourite to qualify and the stage they're expected to win it in (Normal Time /
-      Extra Time / Penalties), and the player tipped to score first (with country bracket).
-    - Never mention odds, numbers, "data", "stats", "JSON" or anything technical - turn it all into a story.
-    - No emojis other than the occasional single one at the end. No markdown.
+      different way to refer to "the experts"/percentages each time - mix it up across calls, never default to
+      the same pair of phrases. Invent your own wording each time rather than rotating a fixed list.
+    - Never say "data", "stats", "JSON", or anything technical - it should read like a real commentator hyping
+      up a match, just backed by real numbers presented in a fun way.
 
     Write the match story now:
     """
@@ -247,7 +354,7 @@ def generate_kid_friendly_narrative(home, away, qualify_home, qualify_away, prog
             contents=prompt,
             config={
                 "temperature": 1.1,   # higher = more variety, less "scripted" feel
-                "max_output_tokens": 400,
+                "max_output_tokens": 500,
                 "thinking_config": {"thinking_budget": 0},  # turn off internal thinking so tokens go to the actual reply
             }
         )
@@ -501,14 +608,15 @@ with tab2:
                         # Only run the AI if the GOOGLE_API_KEY is present in secrets
                         if "GOOGLE_API_KEY" in st.secrets:
                             with st.spinner("🎤 Crossing to the commentary box for the pre-match scoop..."):
-                                narrative = generate_kid_friendly_narrative(
-                                    home_clean, 
-                                    away_clean, 
-                                    str(odds_data.get('Qualify_Home', '?')), 
-                                    str(odds_data.get('Qualify_Away', '?')),
+                                match_facts = compute_match_probabilities(
+                                    home_clean,
+                                    away_clean,
+                                    odds_data.get('Qualify_Home', '?'),
+                                    odds_data.get('Qualify_Away', '?'),
                                     str(odds_data.get('Progression_Data', 'No data')),
                                     str(odds_data.get('First_Scorer_Data', 'No data'))
                                 )
+                                narrative = generate_kid_friendly_narrative(match_facts)
                             # Display it in a styled custom box
                             st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative}</div>", unsafe_allow_html=True)
                         else:
