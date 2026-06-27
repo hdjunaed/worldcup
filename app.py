@@ -205,7 +205,15 @@ SPREADSHEET_ID = "1Cc0MnMtMfwfhyGWpPeQULLVjuSs1dNs91Yf98PW0SL0"
 
 try:
     sh = gc.open_by_key(SPREADSHEET_ID)
+    
+    # Force a fresh pull of all worksheets
     all_worksheets = {ws.title.strip().lower(): ws for ws in sh.worksheets()}
+    
+    # DIAGNOSTIC CHECK: 
+    if "knockout_predictions" not in all_worksheets:
+        st.error(f"🔍 I still can't see the tab! Here are the tabs I DO see: {list(all_worksheets.keys())}")
+        st.stop()
+        
     matches_worksheet = all_worksheets["matches"]
     knockout_worksheet = all_worksheets["knockout_predictions"]
     leaderboard_worksheet = all_worksheets["leaderboard"]
@@ -213,6 +221,7 @@ try:
     matches_df = pd.DataFrame(matches_worksheet.get_all_records())
     knockout_df = pd.DataFrame(knockout_worksheet.get_all_records())
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
+
 except Exception as e:
     st.error(f"❌ Connection Blocked: {e}")
     st.stop()
