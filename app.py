@@ -333,6 +333,10 @@ def generate_kid_friendly_narrative(facts: dict):
         3. Both teams' most likely first scorer, with their percentage - e.g. "{facts.get('home_top_scorer')} is
            favoured to score first at {facts.get('home_top_scorer_pct')}%, just ahead of {facts.get('away_top_scorer')}
            at {facts.get('away_top_scorer_pct')}%" (or similar, in your own words).
+    - EVERY time you mention a player's name, their country must appear with it in the same breath - either as
+      "PlayerName (Country)", or "PlayerName for Country", or "Country's PlayerName" - pick whichever reads most
+      naturally in the sentence, but never write a player's name on its own without their country attached
+      somewhere nearby in that sentence.
     - Use the percentages given, e.g. "32%", as the way of expressing chance - never the words "odds", "bet",
       "stake", "wager", "favourite to win money", or anything gambling-related. Frame it purely as "chance to
       qualify" / "favoured to score first" / "most likely outcome" etc, kid-friendly.
@@ -617,8 +621,12 @@ with tab2:
                                     str(odds_data.get('First_Scorer_Data', 'No data'))
                                 )
                                 narrative = generate_kid_friendly_narrative(match_facts)
+                            # Convert markdown **bold** to real <strong> tags - markdown syntax does NOT get
+                            # re-parsed once it's inside a raw HTML block, so we have to do this conversion
+                            # ourselves before injecting it into the story-card div.
+                            narrative_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", narrative)
                             # Display it in a styled custom box
-                            st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative_html}</div>", unsafe_allow_html=True)
                         else:
                             st.warning("⚠️ Commentary offline. Missing GOOGLE_API_KEY in Streamlit secrets.")
                 # --------------------------------------
