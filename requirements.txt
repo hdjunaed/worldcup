@@ -3,4 +3,4 @@ pandas
 gspread
 google-auth
 pytz
-google-cloud-aiplatform
+google-genai
