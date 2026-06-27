@@ -219,12 +219,22 @@ def generate_kid_friendly_narrative(home, away, qualify_home, qualify_away, prog
       (which team, and which stage). Only mention a penalty shootout as a real possibility if one or both
       Penalties odds are close to the lowest number overall. If the Penalties odds are clearly much higher than
       the Normal Time odds, do NOT mention penalties at all, or explicitly say it's unlikely to go that far.
+    - The first-scorer data is formatted as "Player Name (Country)". When you mention a player, ALWAYS keep
+      their country in brackets right after their name, exactly like that, e.g. "Vinicius Junior (Brazil)" -
+      never drop the bracket, since the kids reading this won't necessarily know which country each player
+      plays for.
     - Work out for yourself from the numbers above who the real favourite is, who is most likely to score first,
       and whether penalties look like a real chance - don't just copy a template, base it on the actual odds.
-    - Write 2-3 short, punchy sentences in casual Aussie kid-commentator style (e.g. "mate", "ripper", "reckon",
-      "heaps good") - vary your wording and sentence order every time so it never reads the same way twice.
+    - Write 2-3 short, punchy sentences in casual Aussie kid-commentator style.
+    - DO NOT always open with the same greeting or the same slang. Randomly pick a different way to open and a
+      different way to refer to "the experts" each time - mix it up across calls, never default to the same
+      pair of phrases. For example, vary your opener among styles like: a hyped exclamation, a direct question
+      to the reader, jumping straight into the action, or a quick scene-setting line - invent your own wording,
+      don't just rotate through a fixed list. Likewise vary how you refer to the odds/experts (e.g. "the form
+      says", "smart money's on", "if the numbers are right", "punters reckon") - never reuse the same expression
+      two matches in a row.
     - Naturally weave in: the favourite to qualify and the stage they're expected to win it in (Normal Time /
-      Extra Time / Penalties), and the player tipped to score first.
+      Extra Time / Penalties), and the player tipped to score first (with country bracket).
     - Never mention odds, numbers, "data", "stats", "JSON" or anything technical - turn it all into a story.
     - No emojis other than the occasional single one at the end. No markdown.
 
