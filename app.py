@@ -727,7 +727,7 @@ with tab2:
                 st.caption("Count the difference in goals after 90 mins + extra time — but NOT penalty shootouts. So if it's 2-1 after extra time, the gap is 1.")
                 if q1_first == "No Goal (0-0)":
                     q2_gap = "0"
-                    st.info("🔒 You picked No Goal — so the gap is automatically **0**! No goals means no difference. It'll go straight to a penalty shootout!")
+                    st.info("🔒 You picked No Goal — so your goal gap is automatically locked to **0**! No goals = no difference. If the match ends 0-0 and goes to a penalty shootout, you'll still earn your **10 pts** for the goal gap — it's already locked in for you, no need to pick anything! 🎯")
                 else:
                     q2_gap = st.radio("Select Goal Gap:", ["0", "1", "2", "3+"], index=None, key=f"q2_{m_id}")
                     if q2_gap == "0":
