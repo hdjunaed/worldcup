@@ -255,10 +255,24 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
         facts["overall_favourite_team"] = overall_best["team"]
         facts["overall_favourite_stage"] = overall_best["stage"]
         facts["overall_favourite_pct"] = overall_best["pct"]
+
+        # --- Separate "how far into the match might this go" analysis ---
+        # NT/ET/PK base rates are structurally similar across most matches (bookmakers apply a fairly fixed
+        # split for how knockout matches generally resolve), so comparing a team's own 3 rows against each
+        # other will almost always crown Normal Time, even when ET/PK are genuinely live possibilities.
+        # Instead, sum BOTH teams' percentage together per stage, so we get one clean view of how likely the
+        # match overall is to need Extra Time or Penalties, independent of who wins.
+        nt_total = sum(e["pct"] for e in progression_entries if e["stage"] == "Normal Time")
+        et_total = sum(e["pct"] for e in progression_entries if e["stage"] == "Extra Time")
+        pk_total = sum(e["pct"] for e in progression_entries if e["stage"] == "Penalties")
+        facts["nt_total_pct"] = round(nt_total, 1)
+        facts["et_total_pct"] = round(et_total, 1)
+        facts["pk_total_pct"] = round(pk_total, 1)
     else:
         facts["home_best_stage"] = facts["away_best_stage"] = None
         facts["home_best_stage_pct"] = facts["away_best_stage_pct"] = None
         facts["overall_favourite_team"] = facts["overall_favourite_stage"] = facts["overall_favourite_pct"] = None
+        facts["nt_total_pct"] = facts["et_total_pct"] = facts["pk_total_pct"] = None
 
     # --- 3. First scorer data: "Name (Country) Odds, Name (Country) Odds, ..." ---
     scorer_entries = []
@@ -321,6 +335,8 @@ def generate_kid_friendly_narrative(facts: dict):
     - {home}'s best path to winning this match: {facts['home_best_stage']} ({facts['home_best_stage_pct']}% chance)
     - {away}'s best path to winning this match: {facts['away_best_stage']} ({facts['away_best_stage_pct']}% chance)
     - Overall single most likely result: {facts['overall_favourite_team']} winning in {facts['overall_favourite_stage']} ({facts['overall_favourite_pct']}% chance)
+    - Combined chance (both teams together) the match needs Extra Time: {facts.get('et_total_pct')}%
+    - Combined chance (both teams together) the match goes all the way to a Penalty Shootout: {facts.get('pk_total_pct')}%
     - {home}'s most likely first scorer: {facts['home_top_scorer']} ({facts['home_top_scorer_pct']}% chance)
     - {away}'s most likely first scorer: {facts['away_top_scorer']} ({facts['away_top_scorer_pct']}% chance)
     """
@@ -356,8 +372,14 @@ def generate_kid_friendly_narrative(facts: dict):
     - You MUST mention BOTH sides for every category, never just the favourite alone:
         1. Both teams' chance to qualify (use both percentages).
         2. Both teams' best path to winning (their stage + percentage) - e.g. compare {home}'s best path against
-           {away}'s best path. Only call out a penalty shootout as a real chance if "Penalties" is actually one of
-           the best-path stages mentioned above for either team - otherwise don't bring penalties up.
+           {away}'s best path.
+           - You're also given the combined chance (both teams added together) that this match needs Extra Time
+             ({facts.get('et_total_pct')}%) or goes all the way to a Penalty Shootout ({facts.get('pk_total_pct')}%).
+             Use these EXACT numbers and phrase them naturally based on their size - roughly: under ~12% reads as
+             "pretty unlikely/a long shot", ~12-18% reads as "a genuine chance/can't be ruled out", and anything
+             above ~20% reads as "a real live possibility/well worth keeping an eye on". Mention at least the
+             Penalty Shootout chance somewhere in the story (phrased to match its actual size), since that's one
+             of the 3 things players are predicting - don't skip it entirely even when it's on the lower end.
         3. {scorer_instruction}
     - EVERY time you mention a player's name, their country must appear with it in the same breath - either as
       "PlayerName (Country)", or "PlayerName for Country", or "Country's PlayerName" - pick whichever reads most
@@ -455,11 +477,23 @@ tab1, tab2, tab3 = st.tabs(["📊 Leaderboard", "⚽ Submit Predictions", "🔒 
 with tab1:
     st.subheader("Current Standings")
     leaderboard_sorted = leaderboard_df.sort_values(by="Points", ascending=False).reset_index(drop=True)
+
+    top_points = leaderboard_sorted["Points"].max() if not leaderboard_sorted.empty else None
+
+    def _highlight_leader(row):
+        if top_points is not None and row["Points"] == top_points:
+            return ["background-color: #FFD700; color: #1a1a1a; font-weight: bold;"] * len(row)
+        return [""] * len(row)
+
+    styled_leaderboard = leaderboard_sorted.style.apply(_highlight_leader, axis=1)
     st.dataframe(
-        leaderboard_sorted,
+        styled_leaderboard,
         use_container_width=True, hide_index=True,
         column_config={"Participant": "Player", "Points": st.column_config.NumberColumn("Total Points", format="%d pts")}
     )
+    if top_points is not None and top_points > 0:
+        leaders = leaderboard_sorted.loc[leaderboard_sorted["Points"] == top_points, "Participant"].tolist()
+        st.markdown(f"👑 **Current leader{'s' if len(leaders) > 1 else ''}:** {', '.join(leaders)} 🎉🔥")
     st.divider()
     st.markdown("🎁 **Prize:** $20 Kmart Gift Card up for grabs.")
 
@@ -769,8 +803,17 @@ with tab3:
                     if p_first.lower() == str(actual_first_val).lower() and p_first != "": earned += 10
                     calculated_points_delta[p] = earned
                     
-                    hype = "🔥 MAXED OUT!" if earned == 20 else ""
-                    st.write(f"**{p}:** {earned} pts {hype} (Predicted {p_score} & {clean_country_name(p_first)})")
+                    if earned == 20:
+                        st.markdown(
+                            f"<div style='background:linear-gradient(90deg,#FFD700,#FF6B00); padding:10px 16px; "
+                            f"border-radius:10px; margin:4px 0; font-weight:bold; color:#1a1a1a; "
+                            f"box-shadow:0 2px 6px rgba(0,0,0,0.25);'>"
+                            f"🔥🎉 <strong>{p}</strong> MAXED OUT! 20/20 pts 🎉🔥 "
+                            f"<span style='font-weight:normal;'>(Predicted {p_score} & {clean_country_name(p_first)})</span>"
+                            f"</div>", unsafe_allow_html=True
+                        )
+                    else:
+                        st.write(f"**{p}:** {earned} pts (Predicted {p_score} & {clean_country_name(p_first)})")
 
             # --- KNOCKOUT STAGE ADMIN ---
             else:
@@ -796,8 +839,17 @@ with tab3:
                     if p_qual.lower() == str(actual_qual_val).lower() and p_qual != "": earned += 10
                     calculated_points_delta[p] = earned
                     
-                    hype = "🚀 PERFECT SCORE!" if earned == 30 else ""
-                    st.write(f"**{p}:** {earned} pts {hype} (Preds: {clean_country_name(p_first)} | Pens: {p_pen} | Adv: {clean_country_name(p_qual)})")
+                    if earned == 30:
+                        st.markdown(
+                            f"<div style='background:linear-gradient(90deg,#FF1E1E,#FFD700); padding:10px 16px; "
+                            f"border-radius:10px; margin:4px 0; font-weight:bold; color:#1a1a1a; "
+                            f"box-shadow:0 2px 6px rgba(0,0,0,0.25);'>"
+                            f"🚀🏆 <strong>{p}</strong> PERFECT SCORE! 30/30 pts 🏆🚀 "
+                            f"<span style='font-weight:normal;'>(Preds: {clean_country_name(p_first)} | Pens: {p_pen} | Adv: {clean_country_name(p_qual)})</span>"
+                            f"</div>", unsafe_allow_html=True
+                        )
+                    else:
+                        st.write(f"**{p}:** {earned} pts (Preds: {clean_country_name(p_first)} | Pens: {p_pen} | Adv: {clean_country_name(p_qual)})")
 
             st.divider()
 
