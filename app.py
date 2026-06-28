@@ -725,9 +725,13 @@ with tab2:
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
                 st.markdown("#### 📏 What's the goal gap when the final whistle blows?")
                 st.caption("Count the difference in goals after 90 mins + extra time — but NOT penalty shootouts. So if it's 2-1 after extra time, the gap is 1.")
-                q2_gap = st.radio("Select Goal Gap:", ["0", "1", "2", "3+"], index=None, key=f"q2_{m_id}")
-                if q2_gap == "0":
-                    st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
+                if q1_first == "No Goal (0-0)":
+                    q2_gap = "0"
+                    st.info("🔒 You picked No Goal — so the gap is automatically **0**! No goals means no difference. It'll go straight to a penalty shootout!")
+                else:
+                    q2_gap = st.radio("Select Goal Gap:", ["0", "1", "2", "3+"], index=None, key=f"q2_{m_id}")
+                    if q2_gap == "0":
+                        st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
