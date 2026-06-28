@@ -531,7 +531,8 @@ with tab2:
         today = current_time.date()
 
         st.markdown(f"### Your Active Predictions Overview ({user})")
-        overview_rows = []
+        group_overview_rows = []
+        ko_overview_rows = []
         
         # Pull active Group matches
         active_group = matches_df[matches_df['Status'] != 'Completed'] if not matches_df.empty else pd.DataFrame()
@@ -540,18 +541,15 @@ with tab2:
             first_scorer = str(row.get(f'{user}_FirstScorer', "")).strip()
             score = str(row.get(f'{user}_Score', "")).strip()
             
-            summary = "Not Submitted"
-            if first_scorer or score:
-                summary = f"First: {first_scorer or '?'} | Score: {score or '?'}"
-                
-            overview_rows.append({
+            group_overview_rows.append({
                 "Match ID": m_id,
                 "🏳️ Home": get_flag_url(row['Home_Team']),
                 "Home Team": clean_country_name(row['Home_Team']),
                 "Away Team": clean_country_name(row['Away_Team']),
                 "🏳️ Away": get_flag_url(row['Away_Team']),
                 "Kickoff (AEST)": row['Kickoff_AEST'].strftime('%a, %d %b, %I:%M %p'),
-                "Your Prediction": summary
+                "⚽ First Scorer": first_scorer or "—",
+                "📊 Score": score or "—",
             })
             
         # Pull active Knockout matches
@@ -561,27 +559,34 @@ with tab2:
             first_scorer = str(row.get(f'{user}_FirstScorer', "")).strip()
             qualifier = str(row.get(f'{user}_Qualifier', "")).strip()
             goal_gap = str(row.get(f'{user}_GoalGap', "")).strip()
-            
-            summary = "Not Submitted"
-            if first_scorer or qualifier or goal_gap:
-                summary = f"First: {first_scorer or '?'} | Gap: {goal_gap or '?'} | Adv: {qualifier or '?'}"
                 
-            overview_rows.append({
+            ko_overview_rows.append({
                 "Match ID": m_id,
                 "🏳️ Home": get_flag_url(row['Home_Team']),
                 "Home Team": clean_country_name(row['Home_Team']),
                 "Away Team": clean_country_name(row['Away_Team']),
                 "🏳️ Away": get_flag_url(row['Away_Team']),
                 "Kickoff (AEST)": row['Kickoff_AEST'].strftime('%a, %d %b, %I:%M %p'),
-                "Your Prediction": summary
+                "⚽ First Scorer": clean_country_name(first_scorer) if first_scorer else "—",
+                "📏 Goal Gap": goal_gap or "—",
+                "🏆 Advances": clean_country_name(qualifier) if qualifier else "—",
             })
 
-        if overview_rows:
+        if group_overview_rows:
+            st.markdown("**Group Stage**")
             st.dataframe(
-                pd.DataFrame(overview_rows), use_container_width=True, hide_index=True,
+                pd.DataFrame(group_overview_rows), use_container_width=True, hide_index=True,
                 column_config={"🏳️ Home": st.column_config.ImageColumn(""), "🏳️ Away": st.column_config.ImageColumn("")}
             )
-        else:
+
+        if ko_overview_rows:
+            st.markdown("**Knockout Stage**")
+            st.dataframe(
+                pd.DataFrame(ko_overview_rows), use_container_width=True, hide_index=True,
+                column_config={"🏳️ Home": st.column_config.ImageColumn(""), "🏳️ Away": st.column_config.ImageColumn("")}
+            )
+
+        if not group_overview_rows and not ko_overview_rows:
             st.info("No active matches scheduled right now.")
 
         st.divider()
