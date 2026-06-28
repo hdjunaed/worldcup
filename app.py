@@ -357,6 +357,9 @@ def generate_kid_friendly_narrative(facts: dict):
            {facts.get('away_second_scorer')} for {away}, each with their percentage chance."""
     )
 
+    qualify_gap = abs(facts['qualify_home_pct'] - facts['qualify_away_pct']) if facts.get('qualify_home_pct') is not None else 0
+    scorer_gap = abs((facts.get('home_top_scorer_pct') or 0) - (facts.get('away_top_scorer_pct') or 0))
+
     prompt = f"""
     You are a fun, casual, kid-friendly Aussie sports commentator. Write a short, exciting pre-match scoop for kids
     about this World Cup knockout match. This is for a kids' prediction game where players guess: (1) who scores
@@ -371,6 +374,12 @@ def generate_kid_friendly_narrative(facts: dict):
     RULES:
     - You MUST mention BOTH sides for every category, never just the favourite alone:
         1. Both teams' chance to qualify (use both percentages).
+           - IMPORTANT: the SIZE of the gap between the two percentages must shape your tone. If the gap is huge
+             (roughly 50+ points apart, e.g. 90% vs 10%), don't pretend it's a close contest - say something like
+             "X are massive favourites here" / "it would be a huge boilover if Y pulled this off" - it's not fair
+             or honest to kids to make a near-certain mismatch sound like a 50/50 toss-up. Only use "don't count
+             them out" / "anything can happen" type language when the gap is genuinely close (under ~25-30 points).
+           - This match's qualify gap is {qualify_gap:.1f} percentage points - phrase your tone to match that.
         2. Both teams' best path to winning (their stage + percentage) - e.g. compare {home}'s best path against
            {away}'s best path.
            - You're also given the combined chance (both teams added together) that this match needs Extra Time
@@ -381,6 +390,10 @@ def generate_kid_friendly_narrative(facts: dict):
              Penalty Shootout chance somewhere in the story (phrased to match its actual size), since that's one
              of the 3 things players are predicting - don't skip it entirely even when it's on the lower end.
         3. {scorer_instruction}
+           - Same honesty rule applies here: if the gap between each team's best scorer pick is big (roughly 15+
+             points apart), say so plainly - e.g. "it would be a real shock if anyone from Y beat X to the first
+             goal" - rather than presenting it like a fair fight when the numbers clearly say otherwise.
+           - This match's first-scorer gap is {scorer_gap:.1f} percentage points - phrase your tone to match that.
     - EVERY time you mention a player's name, their country must appear with it in the same breath - either as
       "PlayerName (Country)", or "PlayerName for Country", or "Country's PlayerName" - pick whichever reads most
       naturally in the sentence, but never write a player's name on its own without their country attached
