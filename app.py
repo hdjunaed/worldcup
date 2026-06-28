@@ -559,12 +559,12 @@ with tab2:
         for _, row in active_ko.iterrows():
             m_id = row['Match_ID']
             first_scorer = str(row.get(f'{user}_FirstScorer', "")).strip()
-            penalty = str(row.get(f'{user}_Penalty', "")).strip()
             qualifier = str(row.get(f'{user}_Qualifier', "")).strip()
+            goal_gap = str(row.get(f'{user}_GoalGap', "")).strip()
             
             summary = "Not Submitted"
-            if first_scorer or penalty or qualifier:
-                summary = f"First: {first_scorer or '?'} | Pens: {penalty or '?'} | Adv: {qualifier or '?'}"
+            if first_scorer or qualifier or goal_gap:
+                summary = f"First: {first_scorer or '?'} | Gap: {goal_gap or '?'} | Adv: {qualifier or '?'}"
                 
             overview_rows.append({
                 "Match ID": m_id,
@@ -723,9 +723,15 @@ with tab2:
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
-                st.markdown("#### 🎯 Will there be a penalty shootout?")
-                st.caption("Does this match require a shootout to decide the winner?")
-                q2_pen = st.radio("Select:", ["Yes", "No"], index=None, key=f"q2_{m_id}")
+                st.markdown("#### 📏 What's the goal gap when the final whistle blows?")
+                st.caption("Count the difference in goals after 90 mins + extra time — but NOT penalty shootouts. So if it's 2-1 after extra time, the gap is 1.")
+                if q1_first == "No Goal (0-0)":
+                    q2_gap = "0"
+                    st.info("🔒 You picked No Goal — so your goal gap is automatically locked to **0**! No goals = no difference. If the match ends 0-0 and goes to a penalty shootout, you'll still earn your **10 pts** for the goal gap — it's already locked in for you, no need to pick anything! 🎯")
+                else:
+                    q2_gap = st.radio("Select Goal Gap:", ["0", "1", "2", "3+"], index=None, key=f"q2_{m_id}")
+                    if q2_gap == "0":
+                        st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
@@ -736,13 +742,13 @@ with tab2:
                 if st.button("Lock Prediction In"):
                     if is_locked:
                         st.error("This match has already kicked off! Changing predictions is locked.")
-                    elif not (q1_first and q2_pen and q3_adv):
+                    elif not (q1_first and q2_gap and q3_adv):
                         st.warning("⚠️ Please answer all 3 questions before submitting!")
                     else:
                         try:
                             headers = [h.strip() for h in target_ws.row_values(1)]
                             first_col_idx = headers.index(f"{user}_FirstScorer") + 1
-                            pen_col_idx = headers.index(f"{user}_Penalty") + 1
+                            gap_col_idx = headers.index(f"{user}_GoalGap") + 1
                             qual_col_idx = headers.index(f"{user}_Qualifier") + 1
                             sheet_row_num = int(m_idx) + 2
                             
@@ -750,7 +756,7 @@ with tab2:
                             sheet_adv_val = m_row['Home_Team'] if q3_adv == home_clean else m_row['Away_Team']
 
                             target_ws.update_cell(sheet_row_num, first_col_idx, sheet_first_val)
-                            target_ws.update_cell(sheet_row_num, pen_col_idx, q2_pen)
+                            target_ws.update_cell(sheet_row_num, gap_col_idx, q2_gap)
                             target_ws.update_cell(sheet_row_num, qual_col_idx, sheet_adv_val)
                             
                             st.success("Knockout predictions cleanly saved to Google Sheets!")
@@ -796,7 +802,7 @@ with tab3:
             calculated_points_delta = {}
             actual_score_str = ""
             actual_first_val = ""
-            actual_pen_val = ""
+            actual_gap_val = ""
             actual_qual_val = ""
 
             # --- GROUP STAGE ADMIN ---
@@ -842,22 +848,22 @@ with tab3:
                 st.markdown("### 1. Enter Actual Match Result (Knockout Stage)")
                 
                 act_first_selection = st.radio("1. Who scored first?", [home_clean, away_clean, "No Goal (0-0)"])
-                act_pen_selection = st.radio("2. Did it go to a Penalty Shootout?", ["Yes", "No"])
+                act_gap_selection = st.radio("2. What was the goal gap at full time (90 min + ET, before pens)?", ["0", "1", "2", "3+"])
                 act_adv_selection = st.radio("3. Who Advanced?", [home_clean, away_clean])
 
                 actual_first_val = match_row['Home_Team'] if act_first_selection == home_clean else (match_row['Away_Team'] if act_first_selection == away_clean else "No Goal")
-                actual_pen_val = act_pen_selection
+                actual_gap_val = act_gap_selection
                 actual_qual_val = match_row['Home_Team'] if act_adv_selection == home_clean else match_row['Away_Team']
 
                 st.markdown("### Points Preview:")
                 for p in participants:
                     p_first = str(match_row.get(f'{p}_FirstScorer', "")).strip()
-                    p_pen = str(match_row.get(f'{p}_Penalty', "")).strip()
+                    p_gap = str(match_row.get(f'{p}_GoalGap', "")).strip()
                     p_qual = str(match_row.get(f'{p}_Qualifier', "")).strip()
                     
                     earned = 0
                     if p_first.lower() == str(actual_first_val).lower() and p_first != "": earned += 10
-                    if p_pen.lower() == str(actual_pen_val).lower() and p_pen != "": earned += 10
+                    if p_gap == str(actual_gap_val) and p_gap != "": earned += 10
                     if p_qual.lower() == str(actual_qual_val).lower() and p_qual != "": earned += 10
                     calculated_points_delta[p] = earned
                     
@@ -867,11 +873,11 @@ with tab3:
                             f"border-radius:10px; margin:4px 0; font-weight:bold; color:#1a1a1a; "
                             f"box-shadow:0 2px 6px rgba(0,0,0,0.25);'>"
                             f"🚀🏆 <strong>{p}</strong> PERFECT SCORE! 30/30 pts 🏆🚀 "
-                            f"<span style='font-weight:normal;'>(Preds: {clean_country_name(p_first)} | Pens: {p_pen} | Adv: {clean_country_name(p_qual)})</span>"
+                            f"<span style='font-weight:normal;'>(First: {clean_country_name(p_first)} | Gap: {p_gap} | Adv: {clean_country_name(p_qual)})</span>"
                             f"</div>", unsafe_allow_html=True
                         )
                     else:
-                        st.write(f"**{p}:** {earned} pts (Preds: {clean_country_name(p_first)} | Pens: {p_pen} | Adv: {clean_country_name(p_qual)})")
+                        st.write(f"**{p}:** {earned} pts (First: {clean_country_name(p_first)} | Gap: {p_gap} | Adv: {clean_country_name(p_qual)})")
 
             st.divider()
 
@@ -892,10 +898,10 @@ with tab3:
                         if stage == "Group" and "Actual_Score" in headers:
                             target_ws.update_cell(sheet_row_num, headers.index("Actual_Score") + 1, actual_score_str)
                         elif stage == "Knockout":
-                            if "Penalty_Shootout" in headers:
-                                target_ws.update_cell(sheet_row_num, headers.index("Penalty_Shootout") + 1, actual_pen_val)
                             if "Qualifying_Team" in headers:
                                 target_ws.update_cell(sheet_row_num, headers.index("Qualifying_Team") + 1, actual_qual_val)
+                            if "Actual_GoalGap" in headers:
+                                target_ws.update_cell(sheet_row_num, headers.index("Actual_GoalGap") + 1, actual_gap_val)
 
                         # 3. Update Leaderboard
                         lead_headers = [h.strip() for h in leaderboard_worksheet.row_values(1)]
