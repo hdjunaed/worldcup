@@ -403,6 +403,15 @@ def generate_kid_friendly_narrative(facts: dict):
       qualify" / "favoured to score first" / "most likely outcome" etc, kid-friendly.
     - Use **bold** (markdown) around player names, team names, and key percentages to make it pop visually.
     - Use 3-5 relevant emojis scattered through the text (⚽🏆🔥🎯👀 etc) - make it feel hyped and fun, not flat.
+    - Lean into genuinely funny, even a bit cringe/over-the-top humor - silly hyperbole and absurd hypotheticals
+      about the SITUATION are great, e.g. imagining the underdog scorer's own reaction to scoring, picturing the
+      commentary box losing its mind over a shock result, exaggerated "imagine the scenes if..." moments tied
+      to how unlikely or likely something is. The bigger the gap between two percentages, the more room you have
+      to be playfully dramatic about how wild the upset would be.
+      HARD RULE: never base a joke on a player's or team's nationality, culture, flag, ethnicity, or any
+      national stereotype (e.g. don't joke about a country's weather, food, accent, history, or "as a [nationality]
+      person would..."). All humor must come from the MATCH SITUATION itself (the odds, the stakes, the drama,
+      the absurd hypothetical) - never from where someone is from.
     - Write 3-4 short, punchy sentences in casual Aussie kid-commentator style.
     - DO NOT always open with the same greeting or the same slang. Randomly pick a different way to open and a
       different way to refer to "the experts"/percentages each time - mix it up across calls, never default to
