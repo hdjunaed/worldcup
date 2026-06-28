@@ -324,7 +324,7 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
 # ==========================================
 # GOOGLE AI STUDIO NARRATIVE GENERATOR
 # ==========================================
-@st.cache_data(ttl=1800) # Caches the story for 30 mins so it doesn't spam the API
+@st.cache_data(ttl=86400) # Caches the story for 24 hrs - odds don't change once entered, so no need to refresh often
 def generate_kid_friendly_narrative(facts: dict):
     home, away = facts["home"], facts["away"]
 
@@ -402,7 +402,7 @@ def generate_kid_friendly_narrative(facts: dict):
     try:
         client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.5-flash-lite',
             contents=prompt,
             config={
                 "temperature": 1.1,   # higher = more variety, less "scripted" feel
