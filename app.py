@@ -9,7 +9,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from google.oauth2.service_account import Credentials
 
-# --- NEW IMPORT FOR GOOGLE AI STUDIO ---
+# --- GOOGLE GENAI FOR MATCH NARRATIVE ---
 from google import genai
 
 st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="wide")
@@ -424,18 +424,15 @@ def generate_kid_friendly_narrative(facts: dict):
     try:
         client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
         response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
+            model='gemini-1.5-flash',
             contents=prompt,
             config={
-                "temperature": 1.1,   # higher = more variety, less "scripted" feel
+                "temperature": 1.1,
                 "max_output_tokens": 500,
-                "thinking_config": {"thinking_budget": 0},  # turn off internal thinking so tokens go to the actual reply
             }
         )
         return response.text.strip()
     except Exception as e:
-        # TEMP DEBUG: surfacing the real error so we can see exactly what's failing.
-        # Remove this st.error line once confirmed working, and revert to a quiet fallback.
         st.error(f"DEBUG - Gemini call failed: {repr(e)}")
         return f"Hold onto your hats! The stats van is running late, but {home} vs {away} is going to be an absolute ripper of a match! ⚽"
 
