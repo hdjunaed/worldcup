@@ -9,8 +9,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from google.oauth2.service_account import Credentials
 
-# --- GOOGLE GENAI FOR MATCH NARRATIVE ---
-from google import genai
+# --- GROQ API FOR MATCH NARRATIVE ---
+from groq import Groq
 
 st.set_page_config(page_title="World Cup Challenge", page_icon="🏆", layout="wide")
 
@@ -322,9 +322,9 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
     return facts
 
 # ==========================================
-# GOOGLE AI STUDIO NARRATIVE GENERATOR
+# GROQ NARRATIVE GENERATOR
 # ==========================================
-@st.cache_data(ttl=86400) # Caches the story for 24 hrs - odds don't change once entered, so no need to refresh often
+@st.cache_data(ttl=86400)
 def generate_kid_friendly_narrative(facts: dict):
     home, away = facts["home"], facts["away"]
 
@@ -422,18 +422,16 @@ def generate_kid_friendly_narrative(facts: dict):
     Write the match story now:
     """
     try:
-        client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt,
-            config={
-                "temperature": 1.1,
-                "max_output_tokens": 500,
-            }
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=1.1,
+            max_tokens=500,
         )
-        return response.text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        st.error(f"DEBUG - Gemini call failed: {repr(e)}")
+        st.error(f"DEBUG - Groq call failed: {repr(e)}")
         return f"Hold onto your hats! The stats van is running late, but {home} vs {away} is going to be an absolute ripper of a match! ⚽"
 
 # --- DATABASE CONNECTION ---
@@ -714,7 +712,7 @@ with tab2:
                             # ourselves before injecting it into the story-card div.
                             narrative_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", narrative)
                             # Display it in a styled custom box
-                            st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative_html}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative_html}<br><br><span style='font-size:0.7em; opacity:0.5;'>⚡ Powered by Groq</span></div>", unsafe_allow_html=True)
                         else:
                             st.warning("⚠️ Commentary offline. Missing GOOGLE_API_KEY in Streamlit secrets.")
                 # --------------------------------------
