@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 from datetime import datetime, timedelta
 import pytz
 import gspread
@@ -465,11 +466,17 @@ try:
     
     # NEW: Safely pull the Match_Odds_Feed if it exists
     odds_worksheet = all_worksheets.get("match_odds_feed")
-    
+
+    # NEW: Golden Boot candidates + Once-Off predictions (Golden Boot / Champion)
+    golden_boot_worksheet = all_worksheets.get("golden_boot_candidates")
+    once_off_worksheet = all_worksheets.get("once_off_predictions")
+
     matches_df = pd.DataFrame(matches_worksheet.get_all_records())
     knockout_df = pd.DataFrame(knockout_worksheet.get_all_records())
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
     odds_df = pd.DataFrame(odds_worksheet.get_all_records()) if odds_worksheet else pd.DataFrame()
+    golden_boot_df = pd.DataFrame(golden_boot_worksheet.get_all_records()) if golden_boot_worksheet else pd.DataFrame()
+    once_off_df = pd.DataFrame(once_off_worksheet.get_all_records()) if once_off_worksheet else pd.DataFrame()
 
 except Exception as e:
     st.error(f"❌ Connection Blocked: {e}")
@@ -484,7 +491,49 @@ for df in [matches_df, knockout_df]:
         df['Kickoff_Date'] = df['Kickoff_AEST'].dt.date
 
 leaderboard_df.columns = leaderboard_df.columns.str.strip()
+if not golden_boot_df.empty:
+    golden_boot_df.columns = golden_boot_df.columns.str.strip()
+if not once_off_df.empty:
+    once_off_df.columns = once_off_df.columns.str.strip()
 participants = ['ND', 'CD', 'SB', 'GB', 'LS', 'HD']
+
+# ==========================================
+# ROUND OF 16+ CONSTANTS (5-question format)
+# ==========================================
+ROUND16_MATCH_ID_THRESHOLD = 89
+ONCE_OFF_LOCK_DATETIME = datetime(2026, 7, 5, 3, 0, 0)  # naive AEST, compared against get_current_aest()
+
+TIME_BRACKET_OPTIONS = [
+    "0:00 – 9:59", "10:00 – 19:59", "20:00 – 29:59", "30:00 – 39:59",
+    "40:00 – End of 1st Half", "45:00 – 54:59", "55:00 – 64:59",
+    "65:00 – 74:59", "75:00 – 84:59", "85:00 – End of 2nd Half",
+    "1st Half ET", "2nd Half ET",
+]
+METHOD_OPTIONS = ["Normal Shot (Foot)", "Header", "Penalty", "Free Kick", "Own Goal"]
+
+def map_minute_to_bracket(minute):
+    m = int(minute)
+    if m <= 9:   return "0:00 – 9:59"
+    if m <= 19:  return "10:00 – 19:59"
+    if m <= 29:  return "20:00 – 29:59"
+    if m <= 39:  return "30:00 – 39:59"
+    if m <= 44 or m == 45: return "40:00 – End of 1st Half"
+    if m <= 54:  return "45:00 – 54:59"
+    if m <= 64:  return "55:00 – 64:59"
+    if m <= 74:  return "65:00 – 74:59"
+    if m <= 84:  return "75:00 – 84:59"
+    if m <= 89 or m == 90: return "85:00 – End of 2nd Half"
+    if m <= 105: return "1st Half ET"
+    return "2nd Half ET"
+
+def is_round16_plus(match_id):
+    try:
+        return int(match_id) >= ROUND16_MATCH_ID_THRESHOLD
+    except Exception:
+        return False
+
+def is_once_off_locked():
+    return get_current_aest() >= ONCE_OFF_LOCK_DATETIME
 
 tab1, tab2, tab3 = st.tabs(["📊 Leaderboard", "⚽ Submit Predictions", "🔒 Admin Engine"])
 
@@ -514,6 +563,20 @@ with tab1:
     st.divider()
     st.markdown("🎁 **Prize:** $20 Kmart Gift Card up for grabs.")
 
+    if not once_off_df.empty:
+        st.divider()
+        st.markdown("### 🏅 Golden Boot & 🏆 Champion Picks")
+        oo_display_rows = []
+        for _, r in once_off_df.iterrows():
+            oo_display_rows.append({
+                "Player": r.get("Participant", ""),
+                "🏅 Golden Boot Pick": r.get("GoldenBoot_Pick", "") or "—",
+                "🏆 Champion Pick": clean_country_name(str(r.get("Champion_Pick", ""))) or "—",
+            })
+        st.dataframe(pd.DataFrame(oo_display_rows), use_container_width=True, hide_index=True)
+        if not is_once_off_locked():
+            st.caption("Picks are still editable until 5 July 2026, 3:00 AM AEDT.")
+
 # ==========================================
 # TAB 2: SUBMIT PREDICTIONS
 # ==========================================
@@ -525,6 +588,78 @@ with tab2:
         current_time = get_current_aest()
         today = current_time.date()
 
+        # ==========================================
+        # PINNED: ONCE-OFF PREDICTIONS (Golden Boot + Champion)
+        # ==========================================
+        st.markdown("### 🏅 Golden Boot & 🏆 Champion Picks")
+        once_off_locked = is_once_off_locked()
+
+        if golden_boot_df.empty or once_off_df.empty:
+            st.warning("⚠️ Once-off predictions aren't set up yet in the sheet (golden_boot_candidates / once_off_predictions tabs).")
+        else:
+            existing_row = once_off_df[once_off_df['Participant'] == user]
+            current_gb_pick = str(existing_row.iloc[0].get('GoldenBoot_Pick', '')).strip() if not existing_row.empty else ""
+            current_champ_pick = str(existing_row.iloc[0].get('Champion_Pick', '')).strip() if not existing_row.empty else ""
+
+            if once_off_locked:
+                st.info(f"🔒 Once-off predictions are **locked** (deadline was 5 July, 3:00 AM AEDT). "
+                        f"Your picks: 🏅 **{current_gb_pick or '—'}** | 🏆 **{clean_country_name(current_champ_pick) or '—'}**")
+            else:
+                st.caption(f"⏰ Locks 5 July 2026, 3:00 AM AEDT. Worth **50 pts each**, scored at the Final.")
+                oo_col1, oo_col2 = st.columns(2)
+
+                with oo_col1:
+                    st.markdown("**🏅 Golden Boot Winner**")
+                    gb_names = golden_boot_df['Player_Name'].tolist()
+                    gb_default_idx = (gb_names.index(current_gb_pick) + 1) if current_gb_pick in gb_names else 0
+                    gb_pick = st.selectbox("Pick your Golden Boot winner:", ["Select player..."] + gb_names, index=gb_default_idx, key="gb_pick_select")
+                    if gb_pick != "Select player...":
+                        gb_row = golden_boot_df[golden_boot_df['Player_Name'] == gb_pick].iloc[0]
+                        img_path = gb_row.get('Image_File', '')
+                        if img_path and os.path.exists(img_path):
+                            st.image(img_path, width=120, caption=f"{gb_pick} ({gb_row.get('Team','')})")
+                        else:
+                            st.caption(f"{gb_pick} ({gb_row.get('Team','')})")
+
+                with oo_col2:
+                    st.markdown("**🏆 Tournament Champion**")
+                    champ_options = sorted(set(
+                        clean_country_name(t) for t in pd.concat([matches_df.get('Home_Team', pd.Series(dtype=str)), matches_df.get('Away_Team', pd.Series(dtype=str))]) if isinstance(t, str)
+                    ))
+                    current_champ_clean = clean_country_name(current_champ_pick)
+                    champ_default_idx = (champ_options.index(current_champ_clean) + 1) if current_champ_clean in champ_options else 0
+                    champ_pick = st.selectbox("Pick the World Cup Champion:", ["Select country..."] + champ_options, index=champ_default_idx, key="champ_pick_select")
+                    if champ_pick != "Select country...":
+                        flag_src = get_flag_url(champ_pick)
+                        if flag_src:
+                            st.image(flag_src, width=90, caption=champ_pick)
+                        else:
+                            st.caption(champ_pick)
+
+                if st.button("💾 Save Once-Off Picks"):
+                    if gb_pick == "Select player..." or champ_pick == "Select country...":
+                        st.error("Please pick both a Golden Boot winner and a Champion before saving.")
+                    else:
+                        try:
+                            oo_headers = [h.strip() for h in once_off_worksheet.row_values(1)]
+                            oo_rows = once_off_worksheet.get_all_records()
+                            row_num = None
+                            for idx, r in enumerate(oo_rows):
+                                if str(r.get("Participant", "")).strip() == user:
+                                    row_num = idx + 2
+                                    break
+                            if row_num is None:
+                                st.error(f"Couldn't find a row for {user} in once_off_predictions — check the sheet has all 6 participants listed.")
+                            else:
+                                once_off_worksheet.update_cell(row_num, oo_headers.index("GoldenBoot_Pick") + 1, gb_pick)
+                                once_off_worksheet.update_cell(row_num, oo_headers.index("Champion_Pick") + 1, champ_pick)
+                                st.success("Once-off picks saved! 🎉")
+                                st.cache_data.clear()
+                                st.rerun()
+                        except Exception as write_err:
+                            st.error(f"Failed to save once-off picks: {write_err}")
+
+        st.divider()
         st.markdown(f"### Your Active Predictions Overview ({user})")
         group_overview_rows = []
         ko_overview_rows = []
@@ -681,8 +816,10 @@ with tab2:
                             st.error(f"Failed to update spreadsheet: {write_err}")
 
             else:
-                # KNOCKOUT STAGE 3-QUESTION FORMAT
-                st.info("🏆 Knockout Stage: 30 Points Total (10 pts per correct answer)")
+                # KNOCKOUT STAGE — 3-QUESTION (Round of 32) OR 5-QUESTION (Round of 16+) FORMAT
+                round16_plus = is_round16_plus(m_id)
+                max_pts = 60 if round16_plus else 30
+                st.info(f"🏆 Knockout Stage: {max_pts} Points Total")
                 
                 # --- GOOGLE AI STUDIO NARRATIVE INJECTION ---
                 if not odds_df.empty:
@@ -739,11 +876,36 @@ with tab2:
                 q3_adv = st.radio("Select Winner:", [home_clean, away_clean], index=None, key=f"q3_{m_id}")
                 st.markdown("</div>", unsafe_allow_html=True)
 
+                q4_time = None
+                q5_method = None
+                if round16_plus:
+                    st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
+                    st.markdown("#### ⏱️ What time does the 1st goal go in? (20 pts)")
+                    if q1_first == "No Goal (0-0)":
+                        q4_time = "No Goal"
+                        st.info("🔒 You picked No Goal — Time of 1st Goal is automatically locked to **No Goal**.")
+                    else:
+                        q4_time = st.selectbox("Select time bracket:", ["Select bracket..."] + TIME_BRACKET_OPTIONS, key=f"q4_{m_id}")
+                        if q4_time == "Select bracket...":
+                            q4_time = None
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                    st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
+                    st.markdown("#### 🎯 How does the 1st goal happen?")
+                    if q1_first == "No Goal (0-0)" or q4_time == "No Goal":
+                        q5_method = "No Goal"
+                        st.info("🔒 Locked to **No Goal**.")
+                    else:
+                        q5_method = st.radio("Select method:", METHOD_OPTIONS, index=None, key=f"q5_{m_id}")
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                required_answered = (q1_first and q2_gap and q3_adv) if not round16_plus else (q1_first and q2_gap and q3_adv and q4_time and q5_method)
+
                 if st.button("Lock Prediction In"):
                     if is_locked:
                         st.error("This match has already kicked off! Changing predictions is locked.")
-                    elif not (q1_first and q2_gap and q3_adv):
-                        st.warning("⚠️ Please answer all 3 questions before submitting!")
+                    elif not required_answered:
+                        st.warning(f"⚠️ Please answer all {5 if round16_plus else 3} questions before submitting!")
                     else:
                         try:
                             headers = [h.strip() for h in target_ws.row_values(1)]
@@ -758,6 +920,12 @@ with tab2:
                             target_ws.update_cell(sheet_row_num, first_col_idx, sheet_first_val)
                             target_ws.update_cell(sheet_row_num, gap_col_idx, q2_gap)
                             target_ws.update_cell(sheet_row_num, qual_col_idx, sheet_adv_val)
+
+                            if round16_plus:
+                                time_col_idx = headers.index(f"{user}_TimeOfFirstGoal") + 1
+                                method_col_idx = headers.index(f"{user}_MethodOfFirstGoal") + 1
+                                target_ws.update_cell(sheet_row_num, time_col_idx, q4_time)
+                                target_ws.update_cell(sheet_row_num, method_col_idx, q5_method)
                             
                             st.success("Knockout predictions cleanly saved to Google Sheets!")
                             st.rerun()
@@ -846,6 +1014,7 @@ with tab3:
             # --- KNOCKOUT STAGE ADMIN ---
             else:
                 st.markdown("### 1. Enter Actual Match Result (Knockout Stage)")
+                round16_plus_admin = is_round16_plus(selected_id)
                 
                 act_first_selection = st.radio("1. Who scored first?", [home_clean, away_clean, "No Goal (0-0)"])
                 act_gap_selection = st.radio("2. What was the goal gap at full time (90 min + ET, before pens)?", ["0", "1", "2", "3+"])
@@ -855,7 +1024,19 @@ with tab3:
                 actual_gap_val = act_gap_selection
                 actual_qual_val = match_row['Home_Team'] if act_adv_selection == home_clean else match_row['Away_Team']
 
+                actual_time_val = "No Goal"
+                actual_method_val = "No Goal"
+                if round16_plus_admin:
+                    if act_first_selection == "No Goal (0-0)":
+                        st.info("🔒 No Goal selected — Time & Method of 1st goal auto-locked to 'No Goal'.")
+                    else:
+                        act_minute = st.number_input("4. Actual minute of the 1st goal (enter 45 for 1st-half injury time, 90 for 2nd-half injury time):", min_value=0, max_value=120, step=1, value=0)
+                        actual_time_val = map_minute_to_bracket(act_minute)
+                        st.caption(f"→ Maps to bracket: **{actual_time_val}**")
+                        actual_method_val = st.radio("5. How did the 1st goal happen?", METHOD_OPTIONS)
+
                 st.markdown("### Points Preview:")
+                max_pts_admin = 60 if round16_plus_admin else 30
                 for p in participants:
                     p_first = str(match_row.get(f'{p}_FirstScorer', "")).strip()
                     p_gap = str(match_row.get(f'{p}_GoalGap', "")).strip()
@@ -865,19 +1046,29 @@ with tab3:
                     if p_first.lower() == str(actual_first_val).lower() and p_first != "": earned += 10
                     if p_gap == str(actual_gap_val) and p_gap != "": earned += 10
                     if p_qual.lower() == str(actual_qual_val).lower() and p_qual != "": earned += 10
+
+                    preview_line = f"First: {clean_country_name(p_first)} | Gap: {p_gap} | Adv: {clean_country_name(p_qual)}"
+
+                    if round16_plus_admin:
+                        p_time = str(match_row.get(f'{p}_TimeOfFirstGoal', "")).strip()
+                        p_method = str(match_row.get(f'{p}_MethodOfFirstGoal', "")).strip()
+                        if p_time == actual_time_val and p_time != "": earned += 20
+                        if p_method == actual_method_val and p_method != "": earned += 10
+                        preview_line += f" | Time: {p_time or '—'} | Method: {p_method or '—'}"
+
                     calculated_points_delta[p] = earned
                     
-                    if earned == 30:
+                    if earned == max_pts_admin:
                         st.markdown(
                             f"<div style='background:linear-gradient(90deg,#FF1E1E,#FFD700); padding:10px 16px; "
                             f"border-radius:10px; margin:4px 0; font-weight:bold; color:#1a1a1a; "
                             f"box-shadow:0 2px 6px rgba(0,0,0,0.25);'>"
-                            f"🚀🏆 <strong>{p}</strong> PERFECT SCORE! 30/30 pts 🏆🚀 "
-                            f"<span style='font-weight:normal;'>(First: {clean_country_name(p_first)} | Gap: {p_gap} | Adv: {clean_country_name(p_qual)})</span>"
+                            f"🚀🏆 <strong>{p}</strong> PERFECT SCORE! {max_pts_admin}/{max_pts_admin} pts 🏆🚀 "
+                            f"<span style='font-weight:normal;'>({preview_line})</span>"
                             f"</div>", unsafe_allow_html=True
                         )
                     else:
-                        st.write(f"**{p}:** {earned} pts (First: {clean_country_name(p_first)} | Gap: {p_gap} | Adv: {clean_country_name(p_qual)})")
+                        st.write(f"**{p}:** {earned} pts ({preview_line})")
 
             st.divider()
 
@@ -902,6 +1093,11 @@ with tab3:
                                 target_ws.update_cell(sheet_row_num, headers.index("Qualifying_Team") + 1, actual_qual_val)
                             if "Actual_GoalGap" in headers:
                                 target_ws.update_cell(sheet_row_num, headers.index("Actual_GoalGap") + 1, actual_gap_val)
+                            if is_round16_plus(selected_id):
+                                if "Actual_TimeOfFirstGoal" in headers:
+                                    target_ws.update_cell(sheet_row_num, headers.index("Actual_TimeOfFirstGoal") + 1, actual_time_val)
+                                if "Actual_MethodOfFirstGoal" in headers:
+                                    target_ws.update_cell(sheet_row_num, headers.index("Actual_MethodOfFirstGoal") + 1, actual_method_val)
 
                         # 3. Update Leaderboard
                         lead_headers = [h.strip() for h in leaderboard_worksheet.row_values(1)]
@@ -923,6 +1119,74 @@ with tab3:
 
                 except Exception as write_err:
                     st.error(f"Database sync failed: {write_err}")
+
+        # ==========================================
+        # ONCE-OFF FINALIZATION (Golden Boot + Champion) — run once, at the Final
+        # ==========================================
+        st.divider()
+        with st.expander("🏅 Finalize Once-Off Predictions (Golden Boot + Champion) — run this at the Final"):
+            if once_off_df.empty or golden_boot_df.empty:
+                st.warning("once_off_predictions or golden_boot_candidates tab not found/empty.")
+            else:
+                st.caption("Enter the actual tournament outcomes below. This awards 50 pts each and only needs to be run once, after the Final.")
+                actual_gb_winner = st.selectbox("Actual Golden Boot Winner:", ["Select player..."] + golden_boot_df['Player_Name'].tolist())
+                champ_country_options = sorted(set(
+                    clean_country_name(t) for t in pd.concat([matches_df.get('Home_Team', pd.Series(dtype=str)), matches_df.get('Away_Team', pd.Series(dtype=str))]) if isinstance(t, str)
+                ))
+                actual_champion = st.selectbox("Actual World Cup Champion:", ["Select country..."] + champ_country_options)
+
+                if actual_gb_winner != "Select player..." and actual_champion != "Select country...":
+                    st.markdown("### Once-Off Points Preview:")
+                    once_off_points_delta = {}
+                    for _, r in once_off_df.iterrows():
+                        p = str(r.get("Participant", "")).strip()
+                        p_gb = str(r.get("GoldenBoot_Pick", "")).strip()
+                        p_champ = clean_country_name(str(r.get("Champion_Pick", ""))).strip()
+                        earned = 0
+                        if p_gb == actual_gb_winner and p_gb != "": earned += 50
+                        if p_champ.lower() == actual_champion.lower() and p_champ != "": earned += 50
+                        once_off_points_delta[p] = earned
+                        st.write(f"**{p}:** {earned} pts (Golden Boot: {p_gb or '—'} | Champion: {p_champ or '—'})")
+
+                    if st.button("💾 Save & Award Once-Off Points"):
+                        try:
+                            oo_headers = [h.strip() for h in once_off_worksheet.row_values(1)]
+                            oo_rows = once_off_worksheet.get_all_records()
+                            lead_headers = [h.strip() for h in leaderboard_worksheet.row_values(1)]
+                            pts_col_idx = lead_headers.index("Points") + 1
+                            current_leaderboard_rows = leaderboard_worksheet.get_all_records()
+
+                            for idx, r in enumerate(oo_rows):
+                                p = str(r.get("Participant", "")).strip()
+                                row_num = idx + 2
+                                p_gb = str(r.get("GoldenBoot_Pick", "")).strip()
+                                p_champ = clean_country_name(str(r.get("Champion_Pick", ""))).strip()
+                                gb_pts = 50 if (p_gb == actual_gb_winner and p_gb != "") else 0
+                                champ_pts = 50 if (p_champ.lower() == actual_champion.lower() and p_champ != "") else 0
+
+                                if "GoldenBoot_Locked" in oo_headers:
+                                    once_off_worksheet.update_cell(row_num, oo_headers.index("GoldenBoot_Locked") + 1, "TRUE")
+                                if "Champion_Locked" in oo_headers:
+                                    once_off_worksheet.update_cell(row_num, oo_headers.index("Champion_Locked") + 1, "TRUE")
+                                if "GoldenBoot_Points" in oo_headers:
+                                    once_off_worksheet.update_cell(row_num, oo_headers.index("GoldenBoot_Points") + 1, gb_pts)
+                                if "Champion_Points" in oo_headers:
+                                    once_off_worksheet.update_cell(row_num, oo_headers.index("Champion_Points") + 1, champ_pts)
+
+                                total_add = gb_pts + champ_pts
+                                if total_add > 0:
+                                    for l_idx, l_row in enumerate(current_leaderboard_rows):
+                                        if str(l_row.get("Participant")).strip() == p:
+                                            l_sheet_row = l_idx + 2
+                                            current_pts = int(l_row.get("Points", 0))
+                                            leaderboard_worksheet.update_cell(l_sheet_row, pts_col_idx, current_pts + total_add)
+                                            break
+
+                            st.success("🏅 Once-off points awarded and leaderboard updated!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as write_err:
+                            st.error(f"Failed to save once-off results: {write_err}")
 
     elif admin_password:
         st.error("Incorrect password.")
