@@ -183,6 +183,34 @@ def clean_country_name(text):
     if not isinstance(text, str): return text
     return re.sub(r'[\U0001f1e6-\U0001f1ff\U00010000-\U0010ffff\u2600-\u27bf]', '', text).strip()
 
+def build_champion_options(matches_df, team_status_df):
+    """Returns (sorted clean team names, dict clean_name -> raw team text w/ flag emoji).
+    Keeping the raw text (with its flag emoji) around means get_flag_url() can use the
+    reliable emoji-codepoint path instead of falling back to the hand-maintained flag_map dict.
+    If team_status_df has a usable Still_Alive column, the list is filtered to survivors only."""
+    clean_to_raw = {}
+    for col in ['Home_Team', 'Away_Team']:
+        if col in matches_df.columns:
+            for raw in matches_df[col].tolist():
+                if isinstance(raw, str):
+                    clean = clean_country_name(raw)
+                    if clean and clean not in clean_to_raw:
+                        clean_to_raw[clean] = raw
+
+    still_alive_set = None
+    if team_status_df is not None and not team_status_df.empty and 'Team' in team_status_df.columns:
+        still_alive_set = set(
+            str(r['Team']).strip() for _, r in team_status_df.iterrows()
+            if str(r.get('Still_Alive', '')).strip().upper() in ('TRUE', '1', 'YES')
+        )
+
+    if still_alive_set:
+        clean_names = sorted(c for c in clean_to_raw if c in still_alive_set)
+    else:
+        clean_names = sorted(clean_to_raw.keys())
+
+    return clean_names, clean_to_raw
+
 def get_current_aest():
     return datetime.now(pytz.timezone('Australia/Sydney')).replace(tzinfo=None)
 
@@ -471,12 +499,16 @@ try:
     golden_boot_worksheet = all_worksheets.get("golden_boot_candidates")
     once_off_worksheet = all_worksheets.get("once_off_predictions")
 
+    # NEW: Team elimination tracker (used to filter Champion picker to survivors only)
+    team_status_worksheet = all_worksheets.get("team_status")
+
     matches_df = pd.DataFrame(matches_worksheet.get_all_records())
     knockout_df = pd.DataFrame(knockout_worksheet.get_all_records())
     leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
     odds_df = pd.DataFrame(odds_worksheet.get_all_records()) if odds_worksheet else pd.DataFrame()
     golden_boot_df = pd.DataFrame(golden_boot_worksheet.get_all_records()) if golden_boot_worksheet else pd.DataFrame()
     once_off_df = pd.DataFrame(once_off_worksheet.get_all_records()) if once_off_worksheet else pd.DataFrame()
+    team_status_df = pd.DataFrame(team_status_worksheet.get_all_records()) if team_status_worksheet else pd.DataFrame()
 
 except Exception as e:
     st.error(f"❌ Connection Blocked: {e}")
@@ -495,6 +527,8 @@ if not golden_boot_df.empty:
     golden_boot_df.columns = golden_boot_df.columns.str.strip()
 if not once_off_df.empty:
     once_off_df.columns = once_off_df.columns.str.strip()
+if not team_status_df.empty:
+    team_status_df.columns = team_status_df.columns.str.strip()
 participants = ['ND', 'CD', 'SB', 'GB', 'LS', 'HD']
 
 # ==========================================
@@ -623,14 +657,12 @@ with tab2:
 
                 with oo_col2:
                     st.markdown("**🏆 Tournament Champion**")
-                    champ_options = sorted(set(
-                        clean_country_name(t) for t in pd.concat([matches_df.get('Home_Team', pd.Series(dtype=str)), matches_df.get('Away_Team', pd.Series(dtype=str))]) if isinstance(t, str)
-                    ))
+                    champ_options, champ_raw_lookup = build_champion_options(matches_df, team_status_df)
                     current_champ_clean = clean_country_name(current_champ_pick)
                     champ_default_idx = (champ_options.index(current_champ_clean) + 1) if current_champ_clean in champ_options else 0
                     champ_pick = st.selectbox("Pick the World Cup Champion:", ["Select country..."] + champ_options, index=champ_default_idx, key="champ_pick_select")
                     if champ_pick != "Select country...":
-                        flag_src = get_flag_url(champ_pick)
+                        flag_src = get_flag_url(champ_raw_lookup.get(champ_pick, champ_pick))
                         if flag_src:
                             st.image(flag_src, width=90, caption=champ_pick)
                         else:
@@ -1099,6 +1131,20 @@ with tab3:
                                 if "Actual_MethodOfFirstGoal" in headers:
                                     target_ws.update_cell(sheet_row_num, headers.index("Actual_MethodOfFirstGoal") + 1, actual_method_val)
 
+                            # 2b. Auto-update team_status: mark the losing team as eliminated
+                            if team_status_worksheet is not None:
+                                try:
+                                    loser_raw = match_row['Away_Team'] if str(actual_qual_val).strip() == str(match_row['Home_Team']).strip() else match_row['Home_Team']
+                                    loser_clean = clean_country_name(loser_raw)
+                                    ts_headers = [h.strip() for h in team_status_worksheet.row_values(1)]
+                                    ts_rows = team_status_worksheet.get_all_records()
+                                    for ts_idx, ts_row in enumerate(ts_rows):
+                                        if str(ts_row.get('Team', '')).strip() == loser_clean:
+                                            team_status_worksheet.update_cell(ts_idx + 2, ts_headers.index('Still_Alive') + 1, "FALSE")
+                                            break
+                                except Exception:
+                                    pass  # non-critical — don't block the match save if this fails
+
                         # 3. Update Leaderboard
                         lead_headers = [h.strip() for h in leaderboard_worksheet.row_values(1)]
                         pts_col_idx = lead_headers.index("Points") + 1
@@ -1130,9 +1176,7 @@ with tab3:
             else:
                 st.caption("Enter the actual tournament outcomes below. This awards 50 pts each and only needs to be run once, after the Final.")
                 actual_gb_winner = st.selectbox("Actual Golden Boot Winner:", ["Select player..."] + golden_boot_df['Player_Name'].tolist())
-                champ_country_options = sorted(set(
-                    clean_country_name(t) for t in pd.concat([matches_df.get('Home_Team', pd.Series(dtype=str)), matches_df.get('Away_Team', pd.Series(dtype=str))]) if isinstance(t, str)
-                ))
+                champ_country_options, _champ_raw_lookup_admin = build_champion_options(matches_df, team_status_df)
                 actual_champion = st.selectbox("Actual World Cup Champion:", ["Select country..."] + champ_country_options)
 
                 if actual_gb_winner != "Select player..." and actual_champion != "Select country...":
