@@ -513,8 +513,13 @@ def load_all_sheet_records(_worksheets_dict):
 
 # Headers rarely change (only when you edit the sheet structure), so these get
 # a much longer TTL - saves a read-call on every single prediction/admin save.
+# NOTE: sheet_title is passed in separately (not underscore-prefixed) purely so
+# Streamlit's cache key can tell different worksheets apart - _ws itself is
+# excluded from hashing since gspread Worksheet objects aren't hashable, and
+# without a distinguishing hashable arg every worksheet would collide on one
+# shared cache entry.
 @st.cache_data(ttl=600, show_spinner=False)
-def get_headers(_ws):
+def get_headers(_ws, sheet_title):
     return [h.strip() for h in _ws.row_values(1)]
 
 try:
@@ -711,7 +716,7 @@ with tab2:
                         st.error("Please pick both a Golden Boot winner and a Champion before saving.")
                     else:
                         try:
-                            oo_headers = get_headers(once_off_worksheet)
+                            oo_headers = get_headers(once_off_worksheet, "once_off_predictions")
                             row_num = None
                             for idx, r in once_off_df.reset_index(drop=True).iterrows():
                                 if str(r.get("Participant", "")).strip() == user:
@@ -871,7 +876,7 @@ with tab2:
                         st.error(f"❌ You predicted goals ({predicted_score_str}), so 'No Goal' is impossible!")
                     else:
                         try:
-                            headers = get_headers(target_ws)
+                            headers = get_headers(target_ws, target_ws.title)
                             first_col_idx = headers.index(f"{user}_FirstScorer") + 1
                             score_col_idx = headers.index(f"{user}_Score") + 1
                             sheet_row_num = int(m_idx) + 2
@@ -977,7 +982,7 @@ with tab2:
                         st.warning(f"⚠️ Please answer all {5 if round16_plus else 3} questions before submitting!")
                     else:
                         try:
-                            headers = get_headers(target_ws)
+                            headers = get_headers(target_ws, target_ws.title)
                             first_col_idx = headers.index(f"{user}_FirstScorer") + 1
                             gap_col_idx = headers.index(f"{user}_GoalGap") + 1
                             qual_col_idx = headers.index(f"{user}_Qualifier") + 1
@@ -1145,7 +1150,7 @@ with tab3:
                 try:
                     with st.spinner("Updating Google Sheets & calculating points live..."):
                         sheet_row_num = int(m_idx) + 2
-                        headers = get_headers(target_ws)
+                        headers = get_headers(target_ws, target_ws.title)
 
                         # 1. Update Match Status
                         if "Status" in headers:
@@ -1173,7 +1178,7 @@ with tab3:
                                 try:
                                     loser_raw = match_row['Away_Team'] if str(actual_qual_val).strip() == str(match_row['Home_Team']).strip() else match_row['Home_Team']
                                     loser_clean = clean_country_name(loser_raw)
-                                    ts_headers = get_headers(team_status_worksheet)
+                                    ts_headers = get_headers(team_status_worksheet, "team_status")
                                     for ts_idx, ts_row in team_status_df.reset_index(drop=True).iterrows():
                                         if str(ts_row.get('Team', '')).strip() == loser_clean:
                                             team_status_worksheet.update_cell(ts_idx + 2, ts_headers.index('Still_Alive') + 1, "FALSE")
@@ -1182,7 +1187,7 @@ with tab3:
                                     pass  # non-critical — don't block the match save if this fails
 
                         # 3. Update Leaderboard
-                        lead_headers = get_headers(leaderboard_worksheet)
+                        lead_headers = get_headers(leaderboard_worksheet, "leaderboard")
                         pts_col_idx = lead_headers.index("Points") + 1
 
                         for p, points_to_add in calculated_points_delta.items():
@@ -1229,8 +1234,8 @@ with tab3:
 
                     if st.button("💾 Save & Award Once-Off Points"):
                         try:
-                            oo_headers = get_headers(once_off_worksheet)
-                            lead_headers = get_headers(leaderboard_worksheet)
+                            oo_headers = get_headers(once_off_worksheet, "once_off_predictions")
+                            lead_headers = get_headers(leaderboard_worksheet, "leaderboard")
                             pts_col_idx = lead_headers.index("Points") + 1
 
                             for idx, r in once_off_df.reset_index(drop=True).iterrows():
