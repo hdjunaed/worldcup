@@ -478,11 +478,48 @@ def get_gspread_client():
 gc = get_gspread_client()
 SPREADSHEET_ID = "1BIeawdAb7CuL4UWwjrW7OE7vjW__eZ6SbXVDG__rX-M"
 
+# --- QUOTA-FRIENDLY CACHING LAYER ---
+# Opening the spreadsheet + listing worksheets is itself a read call, so we only
+# want to do it once every few minutes rather than on every single rerun/click.
+@st.cache_resource(ttl=300)
+def get_workbook(_gc, spreadsheet_id):
+    return _gc.open_by_key(spreadsheet_id)
+
+@st.cache_resource(ttl=300)
+def get_worksheets_dict(_sh):
+    return {ws.title.strip().lower(): ws for ws in _sh.worksheets()}
+
+# Actual row DATA changes far more often (predictions/results), so this gets a
+# short TTL - long enough to absorb rapid-fire reruns from clicks/dropdowns
+# within the same minute, short enough that saves are visible almost immediately.
+# Any successful write elsewhere in the app calls st.cache_data.clear() to force
+# an instant refresh rather than waiting out the TTL.
+SHEET_DATA_TTL = 20
+
+@st.cache_data(ttl=SHEET_DATA_TTL, show_spinner=False)
+def load_all_sheet_records(_worksheets_dict):
+    def _records(key):
+        ws = _worksheets_dict.get(key)
+        return ws.get_all_records() if ws else []
+    return {
+        "matches": _records("matches"),
+        "knockout": _records("knockout_predictions"),
+        "leaderboard": _records("leaderboard"),
+        "odds": _records("match_odds_feed"),
+        "golden_boot": _records("golden_boot_candidates"),
+        "once_off": _records("once_off_predictions"),
+        "team_status": _records("team_status"),
+    }
+
+# Headers rarely change (only when you edit the sheet structure), so these get
+# a much longer TTL - saves a read-call on every single prediction/admin save.
+@st.cache_data(ttl=600, show_spinner=False)
+def get_headers(_ws):
+    return [h.strip() for h in _ws.row_values(1)]
+
 try:
-    sh = gc.open_by_key(SPREADSHEET_ID)
-    
-    # Force a fresh pull of all worksheets
-    all_worksheets = {ws.title.strip().lower(): ws for ws in sh.worksheets()}
+    sh = get_workbook(gc, SPREADSHEET_ID)
+    all_worksheets = get_worksheets_dict(sh)
     
     if "knockout_predictions" not in all_worksheets:
         st.error(f"🔍 I still can't see the tab! Here are the tabs I DO see: {list(all_worksheets.keys())}")
@@ -502,13 +539,14 @@ try:
     # NEW: Team elimination tracker (used to filter Champion picker to survivors only)
     team_status_worksheet = all_worksheets.get("team_status")
 
-    matches_df = pd.DataFrame(matches_worksheet.get_all_records())
-    knockout_df = pd.DataFrame(knockout_worksheet.get_all_records())
-    leaderboard_df = pd.DataFrame(leaderboard_worksheet.get_all_records())
-    odds_df = pd.DataFrame(odds_worksheet.get_all_records()) if odds_worksheet else pd.DataFrame()
-    golden_boot_df = pd.DataFrame(golden_boot_worksheet.get_all_records()) if golden_boot_worksheet else pd.DataFrame()
-    once_off_df = pd.DataFrame(once_off_worksheet.get_all_records()) if once_off_worksheet else pd.DataFrame()
-    team_status_df = pd.DataFrame(team_status_worksheet.get_all_records()) if team_status_worksheet else pd.DataFrame()
+    sheet_records = load_all_sheet_records(all_worksheets)
+    matches_df = pd.DataFrame(sheet_records["matches"])
+    knockout_df = pd.DataFrame(sheet_records["knockout"])
+    leaderboard_df = pd.DataFrame(sheet_records["leaderboard"])
+    odds_df = pd.DataFrame(sheet_records["odds"])
+    golden_boot_df = pd.DataFrame(sheet_records["golden_boot"])
+    once_off_df = pd.DataFrame(sheet_records["once_off"])
+    team_status_df = pd.DataFrame(sheet_records["team_status"])
 
 except Exception as e:
     st.error(f"❌ Connection Blocked: {e}")
@@ -673,10 +711,9 @@ with tab2:
                         st.error("Please pick both a Golden Boot winner and a Champion before saving.")
                     else:
                         try:
-                            oo_headers = [h.strip() for h in once_off_worksheet.row_values(1)]
-                            oo_rows = once_off_worksheet.get_all_records()
+                            oo_headers = get_headers(once_off_worksheet)
                             row_num = None
-                            for idx, r in enumerate(oo_rows):
+                            for idx, r in once_off_df.reset_index(drop=True).iterrows():
                                 if str(r.get("Participant", "")).strip() == user:
                                     row_num = idx + 2
                                     break
@@ -834,7 +871,7 @@ with tab2:
                         st.error(f"❌ You predicted goals ({predicted_score_str}), so 'No Goal' is impossible!")
                     else:
                         try:
-                            headers = [h.strip() for h in target_ws.row_values(1)]
+                            headers = get_headers(target_ws)
                             first_col_idx = headers.index(f"{user}_FirstScorer") + 1
                             score_col_idx = headers.index(f"{user}_Score") + 1
                             sheet_row_num = int(m_idx) + 2
@@ -940,7 +977,7 @@ with tab2:
                         st.warning(f"⚠️ Please answer all {5 if round16_plus else 3} questions before submitting!")
                     else:
                         try:
-                            headers = [h.strip() for h in target_ws.row_values(1)]
+                            headers = get_headers(target_ws)
                             first_col_idx = headers.index(f"{user}_FirstScorer") + 1
                             gap_col_idx = headers.index(f"{user}_GoalGap") + 1
                             qual_col_idx = headers.index(f"{user}_Qualifier") + 1
@@ -1108,7 +1145,7 @@ with tab3:
                 try:
                     with st.spinner("Updating Google Sheets & calculating points live..."):
                         sheet_row_num = int(m_idx) + 2
-                        headers = [h.strip() for h in target_ws.row_values(1)]
+                        headers = get_headers(target_ws)
 
                         # 1. Update Match Status
                         if "Status" in headers:
@@ -1136,9 +1173,8 @@ with tab3:
                                 try:
                                     loser_raw = match_row['Away_Team'] if str(actual_qual_val).strip() == str(match_row['Home_Team']).strip() else match_row['Home_Team']
                                     loser_clean = clean_country_name(loser_raw)
-                                    ts_headers = [h.strip() for h in team_status_worksheet.row_values(1)]
-                                    ts_rows = team_status_worksheet.get_all_records()
-                                    for ts_idx, ts_row in enumerate(ts_rows):
+                                    ts_headers = get_headers(team_status_worksheet)
+                                    for ts_idx, ts_row in team_status_df.reset_index(drop=True).iterrows():
                                         if str(ts_row.get('Team', '')).strip() == loser_clean:
                                             team_status_worksheet.update_cell(ts_idx + 2, ts_headers.index('Still_Alive') + 1, "FALSE")
                                             break
@@ -1146,13 +1182,12 @@ with tab3:
                                     pass  # non-critical — don't block the match save if this fails
 
                         # 3. Update Leaderboard
-                        lead_headers = [h.strip() for h in leaderboard_worksheet.row_values(1)]
+                        lead_headers = get_headers(leaderboard_worksheet)
                         pts_col_idx = lead_headers.index("Points") + 1
-                        current_leaderboard_rows = leaderboard_worksheet.get_all_records()
 
                         for p, points_to_add in calculated_points_delta.items():
                             if points_to_add > 0:
-                                for idx, l_row in enumerate(current_leaderboard_rows):
+                                for idx, l_row in leaderboard_df.reset_index(drop=True).iterrows():
                                     if str(l_row.get("Participant")).strip() == p:
                                         l_sheet_row = idx + 2
                                         current_pts = int(l_row.get("Points", 0))
@@ -1194,13 +1229,11 @@ with tab3:
 
                     if st.button("💾 Save & Award Once-Off Points"):
                         try:
-                            oo_headers = [h.strip() for h in once_off_worksheet.row_values(1)]
-                            oo_rows = once_off_worksheet.get_all_records()
-                            lead_headers = [h.strip() for h in leaderboard_worksheet.row_values(1)]
+                            oo_headers = get_headers(once_off_worksheet)
+                            lead_headers = get_headers(leaderboard_worksheet)
                             pts_col_idx = lead_headers.index("Points") + 1
-                            current_leaderboard_rows = leaderboard_worksheet.get_all_records()
 
-                            for idx, r in enumerate(oo_rows):
+                            for idx, r in once_off_df.reset_index(drop=True).iterrows():
                                 p = str(r.get("Participant", "")).strip()
                                 row_num = idx + 2
                                 p_gb = str(r.get("GoldenBoot_Pick", "")).strip()
@@ -1219,7 +1252,7 @@ with tab3:
 
                                 total_add = gb_pts + champ_pts
                                 if total_add > 0:
-                                    for l_idx, l_row in enumerate(current_leaderboard_rows):
+                                    for l_idx, l_row in leaderboard_df.reset_index(drop=True).iterrows():
                                         if str(l_row.get("Participant")).strip() == p:
                                             l_sheet_row = l_idx + 2
                                             current_pts = int(l_row.get("Points", 0))
