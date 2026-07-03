@@ -733,61 +733,98 @@ def build_active_prediction_table(match_row):
     """
     Build participant prediction table.
 
-    Returned dataframe:
-
-    Player
-    First Scorer
-    Goal Gap
-    Advances
-    Time
-    Method
+    Automatically adapts columns depending on whether the match
+    is Group Stage or Knockout.
     """
+
+    stage = str(match_row.get("Stage", "")).lower()
+
+    is_knockout = any(
+        x in stage
+        for x in [
+            "round",
+            "knockout",
+            "quarter",
+            "semi",
+            "final"
+        ]
+    )
 
     rows = []
 
     for participant in participants:
 
-        rows.append({
+        if is_knockout:
 
-            "Player":
-                participant,
+            rows.append({
 
-            "⚽ First Scorer":
-                get_prediction_value(
-                    match_row,
+                "Player":
                     participant,
-                    "FirstScorer"
-                ),
 
-            "📏 Goal Gap":
-                get_prediction_value(
-                    match_row,
+                "⚽ First Scorer":
+                    get_prediction_value(
+                        match_row,
+                        participant,
+                        "FirstScorer"
+                    ),
+
+                "📏 Goal Gap":
+                    get_prediction_value(
+                        match_row,
+                        participant,
+                        "GoalGap"
+                    ),
+
+                "🏆 Advances":
+                    get_prediction_value(
+                        match_row,
+                        participant,
+                        "Qualifier"
+                    ),
+
+                "⏱️ Time":
+                    get_prediction_value(
+                        match_row,
+                        participant,
+                        "TimeOfFirstGoal"
+                    ),
+
+                "🎯 Method":
+                    get_prediction_value(
+                        match_row,
+                        participant,
+                        "MethodOfFirstGoal"
+                    )
+
+            })
+
+        else:
+
+            score_column = f"{participant}_Score"
+
+            if score_column in match_row.index:
+                score_prediction = str(match_row[score_column]).strip()
+                if score_prediction == "":
+                    score_prediction = "❌ Not Submitted"
+            else:
+                score_prediction = "❌ Not Submitted"
+
+            rows.append({
+
+                "Player":
                     participant,
-                    "GoalGap"
-                ),
 
-            "🏆 Advances":
-                get_prediction_value(
-                    match_row,
-                    participant,
-                    "Qualifier"
-                ),
+                "⚽ First Scorer":
+                    get_prediction_value(
+                        match_row,
+                        participant,
+                        "FirstScorer"
+                    ),
 
-            "⏱️ Time":
-                get_prediction_value(
-                    match_row,
-                    participant,
-                    "TimeOfFirstGoal"
-                ),
+                "📊 Score":
+                    score_prediction
 
-            "🎯 Method":
-                get_prediction_value(
-                    match_row,
-                    participant,
-                    "MethodOfFirstGoal"
-                )
-
-        })
+            })
 
     return pd.DataFrame(rows)
 
