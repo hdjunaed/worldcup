@@ -379,33 +379,36 @@ def generate_kid_friendly_narrative(facts: dict):
     )
 
     prompt = f"""
-    You're a fun, kid-friendly Aussie sports commentator. Write an EXTREMELY SHORT pre-match hype line for a kids'
-    prediction game. Players are guessing: (1) who scores first, (2) if it goes to penalties, (3) who wins.
+    Kamu komentator sepak bola yang seru dan asik, nulis buat anak-anak yang lagi main tebak-tebakan bola. Tulis
+    dalam BAHASA INDONESIA yang santai dan gaul (bukan bahasa baku/formal), SANGAT SINGKAT. Anak-anak lagi nebak:
+    (1) siapa yang cetak gol duluan, (2) apakah sampai adu penalti, (3) siapa yang menang.
 
-    MATCH: {home} vs {away}
+    PERTANDINGAN: {home} vs {away}
 
-    FACTS (already calculated - just narrate them, don't do any maths):
-    - Win chance: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
-    - Most likely to score first: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
+    FAKTA (sudah dihitung - tinggal diceritakan, jangan hitung ulang):
+    - Peluang menang: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
+    - Paling mungkin cetak gol pertama: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
       vs {facts.get('away_top_scorer')} ({away}) {facts.get('away_top_scorer_pct')}%
-    - Chance the match is decided in each stage: {stage_grid}
+    - Peluang pertandingan selesai di tiap babak: {stage_grid}
 
-    YOUR JOB: look at that stage grid and make your OWN call - Normal Time, Extra Time, or Penalties, and who
-    wins it that way. A wrong call is completely fine, this is just for fun - just make it an informed guess
-    based on those numbers, not a random pick.
+    TUGASMU: lihat sendiri angka-angka di atas terus putuskan sendiri - pertandingan ini kemungkinan selesai di
+    waktu normal (NT), perpanjangan waktu (ET), atau adu penalti (PK), dan siapa yang menang lewat itu. Salah
+    tebak nggak apa-apa, ini cuma buat seru-seruan - yang penting tebakanmu berdasarkan angka di atas, bukan asal.
 
-    STRICT RULES:
-    - MAXIMUM 2 short sentences. Total. That's the entire brief - be brutally concise, this is a compressed
-      hype line, not a story.
-    - Squeeze in all 3: the win favourite, the first-scorer pick, and your NT/ET/PK call.
-    - **Bold** the key names, teams and percentages.
-    - 1-2 emoji max.
-    - Say "chance" / "favoured" - never "odds", "bet", "stake", or anything gambling-related.
-    - Every player name needs their country right next to it (e.g. "PlayerName (Country)").
-    - No jokes based on nationality, culture, accent, or flag.
-    - Vary your opening words each time - don't reuse the same opener call after call.
+    ATURAN KETAT:
+    - MAKSIMAL 2 kalimat pendek. Total. Itu aja - harus SANGAT ringkas, ini cuma satu baris hype, bukan cerita.
+    - Masukkan ketiganya dalam ruang sekecil itu: jagoan menang, jagoan gol pertama, dan tebakanmu soal NT/ET/PK.
+    - **Bold** (markdown) nama pemain, nama tim, dan persentase penting.
+    - Maksimal 1-2 emoji.
+    - Pakai kata "peluang" / "diunggulkan" - JANGAN pakai kata "odds", "taruhan", "judi", atau apapun yang
+      berbau perjudian.
+    - Nama negara/tim tetap pakai nama aslinya (boleh Bahasa Inggris untuk nama negara/pemain), tapi kalimatnya
+      full Bahasa Indonesia gaul.
+    - Setiap nama pemain harus disertai negaranya di dekat situ (contoh: "PlayerName (Country)").
+    - Jangan bercanda soal kebangsaan, budaya, aksen, atau bendera.
+    - Ganti-ganti kalimat pembuka tiap kali dipanggil - jangan pakai pembuka yang sama terus-menerus.
 
-    Write it now (2 sentences max, no preamble):
+    Tulis sekarang (maksimal 2 kalimat, tanpa basa-basi pembuka):
     """
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -418,7 +421,7 @@ def generate_kid_friendly_narrative(facts: dict):
         return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"DEBUG - Groq call failed: {repr(e)}")
-        return f"**{home}** vs **{away}** — buckle up, this one's a cracker! ⚽"
+        return f"**{home}** vs **{away}** — siap-siap, ini bakal seru banget! ⚽"
 
 # --- DATABASE CONNECTION ---
 @st.cache_resource(ttl=600)
