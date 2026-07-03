@@ -654,6 +654,79 @@ with tab1:
         if not is_once_off_locked():
             st.caption("Picks are still editable until 5 July 2026, 3:00 AM AEDT.")
 
+    # ==========================================
+    # ACTIVE PREDICTIONS — ALL PARTICIPANTS
+    # Shows today's not-yet-scored matches. From 5:00 PM AEDT onward, also
+    # previews tomorrow's matches (so people can see/compare picks ahead of
+    # kickoff even before anyone's submitted). A match disappears from here
+    # the moment Admin marks it Completed — nothing to maintain manually.
+    # ==========================================
+    st.divider()
+    st.markdown("### 📢 Active Predictions — All Participants")
+
+    lb_now = get_current_aest()
+    lb_today = lb_now.date()
+    lb_tomorrow = lb_today + timedelta(days=1)
+    lb_cutover = lb_now.replace(hour=17, minute=0, second=0, microsecond=0)
+
+    lb_combined = pd.concat(
+        [df for df in [matches_df, knockout_df] if not df.empty], ignore_index=True
+    ) if (not matches_df.empty or not knockout_df.empty) else pd.DataFrame()
+
+    if lb_combined.empty:
+        st.info("No match schedule loaded yet.")
+    else:
+        cond_today = (lb_combined['Kickoff_Date'] == lb_today) & (lb_combined['Status'] != 'Completed')
+        cond_tomorrow_preview = (lb_now >= lb_cutover) & (lb_combined['Kickoff_Date'] == lb_tomorrow) & (lb_combined['Status'] != 'Completed')
+        lb_active_window = lb_combined[cond_today | cond_tomorrow_preview].sort_values('Kickoff_AEST')
+
+        if lb_active_window.empty:
+            st.info("No active matches to show right now — check back closer to kickoff! 🎉")
+        else:
+            if lb_now >= lb_cutover:
+                st.caption(f"Showing today's remaining matches plus a preview of tomorrow's ({lb_tomorrow.strftime('%a, %d %b')}) matches.")
+            for _, arow in lb_active_window.iterrows():
+                a_mid = arow['Match_ID']
+                a_stage = 'Group' if a_mid in matches_df['Match_ID'].values else 'Knockout'
+                a_home = clean_country_name(arow['Home_Team'])
+                a_away = clean_country_name(arow['Away_Team'])
+                a_locked = lb_now >= arow['Kickoff_AEST']
+                lock_badge = "🔒 **LOCKED**" if a_locked else "🟢 **OPEN**"
+
+                st.markdown(
+                    f"**Match {a_mid}: {a_home} vs {a_away}**  "
+                    f"⏰ {arow['Kickoff_AEST'].strftime('%a, %d %b, %I:%M %p')} AEST  —  {lock_badge}"
+                )
+
+                p_rows = []
+                for p in participants:
+                    if a_stage == 'Group':
+                        p_first = str(arow.get(f'{p}_FirstScorer', "")).strip()
+                        p_score = str(arow.get(f'{p}_Score', "")).strip()
+                        p_rows.append({
+                            "Player": p,
+                            "⚽ First Scorer": clean_country_name(p_first) or "—",
+                            "📊 Score": p_score or "—",
+                        })
+                    else:
+                        p_first = str(arow.get(f'{p}_FirstScorer', "")).strip()
+                        p_gap = str(arow.get(f'{p}_GoalGap', "")).strip()
+                        p_qual = str(arow.get(f'{p}_Qualifier', "")).strip()
+                        p_row = {
+                            "Player": p,
+                            "⚽ First Scorer": clean_country_name(p_first) or "—",
+                            "📏 Goal Gap": p_gap or "—",
+                            "🏆 Advances": clean_country_name(p_qual) or "—",
+                        }
+                        if is_round16_plus(a_mid):
+                            p_time = str(arow.get(f'{p}_TimeOfFirstGoal', "")).strip()
+                            p_method = str(arow.get(f'{p}_MethodOfFirstGoal', "")).strip()
+                            p_row["⏱️ Time"] = p_time or "—"
+                            p_row["🎯 Method"] = p_method or "—"
+                        p_rows.append(p_row)
+
+                st.dataframe(pd.DataFrame(p_rows), use_container_width=True, hide_index=True)
+
 # ==========================================
 # TAB 2: SUBMIT PREDICTIONS
 # ==========================================
@@ -763,8 +836,8 @@ with tab2:
             first_scorer = str(row.get(f'{user}_FirstScorer', "")).strip()
             qualifier = str(row.get(f'{user}_Qualifier', "")).strip()
             goal_gap = str(row.get(f'{user}_GoalGap', "")).strip()
-                
-            ko_overview_rows.append({
+
+            ko_row = {
                 "Match ID": m_id,
                 "🏳️ Home": get_flag_url(row['Home_Team']),
                 "Home Team": clean_country_name(row['Home_Team']),
@@ -774,7 +847,16 @@ with tab2:
                 "⚽ First Scorer": clean_country_name(first_scorer) if first_scorer else "—",
                 "📏 Goal Gap": goal_gap or "—",
                 "🏆 Advances": clean_country_name(qualifier) if qualifier else "—",
-            })
+            }
+            if is_round16_plus(m_id):
+                time_pick = str(row.get(f'{user}_TimeOfFirstGoal', "")).strip()
+                method_pick = str(row.get(f'{user}_MethodOfFirstGoal', "")).strip()
+                ko_row["⏱️ Time"] = time_pick or "—"
+                ko_row["🎯 Method"] = method_pick or "—"
+            else:
+                ko_row["⏱️ Time"] = "N/A"
+                ko_row["🎯 Method"] = "N/A"
+            ko_overview_rows.append(ko_row)
 
         if group_overview_rows:
             st.markdown("**Group Stage**")
