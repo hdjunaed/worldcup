@@ -285,6 +285,20 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
         facts["overall_favourite_stage"] = overall_best["stage"]
         facts["overall_favourite_pct"] = overall_best["pct"]
 
+        # Full per-team, per-stage grid - handed to the AI as-is so IT makes the
+        # NT/ET/PK call itself from the raw numbers, rather than us pre-deciding it.
+        def pct_for(team_clean, stage_name):
+            for e in progression_entries:
+                if clean_country_name(e["team"]) == team_clean and e["stage"] == stage_name:
+                    return e["pct"]
+            return 0
+        facts["home_nt_pct"] = pct_for(home, "Normal Time")
+        facts["home_et_pct"] = pct_for(home, "Extra Time")
+        facts["home_pk_pct"] = pct_for(home, "Penalties")
+        facts["away_nt_pct"] = pct_for(away, "Normal Time")
+        facts["away_et_pct"] = pct_for(away, "Extra Time")
+        facts["away_pk_pct"] = pct_for(away, "Penalties")
+
         # --- Separate "how far into the match might this go" analysis ---
         # NT/ET/PK base rates are structurally similar across most matches (bookmakers apply a fairly fixed
         # split for how knockout matches generally resolve), so comparing a team's own 3 rows against each
@@ -302,6 +316,8 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
         facts["home_best_stage_pct"] = facts["away_best_stage_pct"] = None
         facts["overall_favourite_team"] = facts["overall_favourite_stage"] = facts["overall_favourite_pct"] = None
         facts["nt_total_pct"] = facts["et_total_pct"] = facts["pk_total_pct"] = None
+        facts["home_nt_pct"] = facts["home_et_pct"] = facts["home_pk_pct"] = 0
+        facts["away_nt_pct"] = facts["away_et_pct"] = facts["away_pk_pct"] = 0
 
     # --- 3. First scorer data: "Name (Country) Odds, Name (Country) Odds, ..." ---
     scorer_entries = []
@@ -357,111 +373,52 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
 def generate_kid_friendly_narrative(facts: dict):
     home, away = facts["home"], facts["away"]
 
-    scorer_tier = facts.get("scorer_tier", 1)
-
-    facts_block = f"""
-    - Chance to qualify: {home} {facts['qualify_home_pct']}% vs {away} {facts['qualify_away_pct']}%
-    - {home}'s best path to winning this match: {facts['home_best_stage']} ({facts['home_best_stage_pct']}% chance)
-    - {away}'s best path to winning this match: {facts['away_best_stage']} ({facts['away_best_stage_pct']}% chance)
-    - Overall single most likely result: {facts['overall_favourite_team']} winning in {facts['overall_favourite_stage']} ({facts['overall_favourite_pct']}% chance)
-    - Combined chance (both teams together) the match needs Extra Time: {facts.get('et_total_pct')}%
-    - Combined chance (both teams together) the match goes all the way to a Penalty Shootout: {facts.get('pk_total_pct')}%
-    - {home}'s most likely first scorer: {facts['home_top_scorer']} ({facts['home_top_scorer_pct']}% chance)
-    - {away}'s most likely first scorer: {facts['away_top_scorer']} ({facts['away_top_scorer_pct']}% chance)
-    """
-    if scorer_tier == 2 and facts.get("home_second_scorer") and facts.get("away_second_scorer"):
-        facts_block += f"""
-    - {home}'s second most likely first scorer: {facts['home_second_scorer']} ({facts['home_second_scorer_pct']}% chance)
-    - {away}'s second most likely first scorer: {facts['away_second_scorer']} ({facts['away_second_scorer_pct']}% chance)
-    """
-
-    scorer_instruction = (
-        f"""Both teams' most likely first scorer, with their percentage - e.g. "{facts.get('home_top_scorer')} is
-           favoured to score first at {facts.get('home_top_scorer_pct')}%, just ahead of {facts.get('away_top_scorer')}
-           at {facts.get('away_top_scorer_pct')}%" (or similar, in your own words)."""
-        if scorer_tier == 1 or not facts.get("home_second_scorer")
-        else
-        f"""Each team's TOP TWO most likely first scorers, with percentages - mention {facts.get('home_top_scorer')}
-           and {facts.get('home_second_scorer')} for {home}, and {facts.get('away_top_scorer')} and
-           {facts.get('away_second_scorer')} for {away}, each with their percentage chance."""
+    stage_grid = (
+        f"{home} - NT {facts.get('home_nt_pct', 0)}% / ET {facts.get('home_et_pct', 0)}% / PK {facts.get('home_pk_pct', 0)}%; "
+        f"{away} - NT {facts.get('away_nt_pct', 0)}% / ET {facts.get('away_et_pct', 0)}% / PK {facts.get('away_pk_pct', 0)}%"
     )
 
-    qualify_gap = abs(facts['qualify_home_pct'] - facts['qualify_away_pct']) if facts.get('qualify_home_pct') is not None else 0
-    scorer_gap = abs((facts.get('home_top_scorer_pct') or 0) - (facts.get('away_top_scorer_pct') or 0))
-
     prompt = f"""
-    You are a fun, casual, kid-friendly Aussie sports commentator. Write a short, exciting pre-match scoop for kids
-    about this World Cup knockout match. This is for a kids' prediction game where players guess: (1) who scores
-    first, (2) whether it goes to a penalty shootout, (3) who qualifies.
+    You're a fun, kid-friendly Aussie sports commentator. Write an EXTREMELY SHORT pre-match hype line for a kids'
+    prediction game. Players are guessing: (1) who scores first, (2) if it goes to penalties, (3) who wins.
 
     MATCH: {home} vs {away}
 
-    Here are the FINAL, ALREADY-CALCULATED percentage facts you must use (do not do any maths yourself, do not
-    change these numbers or invent new ones, just narrate them in a fun way):
-    {facts_block}
+    FACTS (already calculated - just narrate them, don't do any maths):
+    - Win chance: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
+    - Most likely to score first: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
+      vs {facts.get('away_top_scorer')} ({away}) {facts.get('away_top_scorer_pct')}%
+    - Chance the match is decided in each stage: {stage_grid}
 
-    RULES:
-    - You MUST mention BOTH sides for every category, never just the favourite alone:
-        1. Both teams' chance to qualify (use both percentages).
-           - IMPORTANT: the SIZE of the gap between the two percentages must shape your tone. If the gap is huge
-             (roughly 50+ points apart, e.g. 90% vs 10%), don't pretend it's a close contest - say something like
-             "X are massive favourites here" / "it would be a huge boilover if Y pulled this off" - it's not fair
-             or honest to kids to make a near-certain mismatch sound like a 50/50 toss-up. Only use "don't count
-             them out" / "anything can happen" type language when the gap is genuinely close (under ~25-30 points).
-           - This match's qualify gap is {qualify_gap:.1f} percentage points - phrase your tone to match that.
-        2. Both teams' best path to winning (their stage + percentage) - e.g. compare {home}'s best path against
-           {away}'s best path.
-           - You're also given the combined chance (both teams added together) that this match needs Extra Time
-             ({facts.get('et_total_pct')}%) or goes all the way to a Penalty Shootout ({facts.get('pk_total_pct')}%).
-             Use these EXACT numbers and phrase them naturally based on their size - roughly: under ~12% reads as
-             "pretty unlikely/a long shot", ~12-18% reads as "a genuine chance/can't be ruled out", and anything
-             above ~20% reads as "a real live possibility/well worth keeping an eye on". Mention at least the
-             Penalty Shootout chance somewhere in the story (phrased to match its actual size), since that's one
-             of the 3 things players are predicting - don't skip it entirely even when it's on the lower end.
-        3. {scorer_instruction}
-           - Same honesty rule applies here: if the gap between each team's best scorer pick is big (roughly 15+
-             points apart), say so plainly - e.g. "it would be a real shock if anyone from Y beat X to the first
-             goal" - rather than presenting it like a fair fight when the numbers clearly say otherwise.
-           - This match's first-scorer gap is {scorer_gap:.1f} percentage points - phrase your tone to match that.
-    - EVERY time you mention a player's name, their country must appear with it in the same breath - either as
-      "PlayerName (Country)", or "PlayerName for Country", or "Country's PlayerName" - pick whichever reads most
-      naturally in the sentence, but never write a player's name on its own without their country attached
-      somewhere nearby in that sentence.
-    - Use the percentages given, e.g. "32%", as the way of expressing chance - never the words "odds", "bet",
-      "stake", "wager", "favourite to win money", or anything gambling-related. Frame it purely as "chance to
-      qualify" / "favoured to score first" / "most likely outcome" etc, kid-friendly.
-    - Use **bold** (markdown) around player names, team names, and key percentages to make it pop visually.
-    - Use 3-5 relevant emojis scattered through the text (⚽🏆🔥🎯👀 etc) - make it feel hyped and fun, not flat.
-    - Lean into genuinely funny, even a bit cringe/over-the-top humor - silly hyperbole and absurd hypotheticals
-      about the SITUATION are great, e.g. imagining the underdog scorer's own reaction to scoring, picturing the
-      commentary box losing its mind over a shock result, exaggerated "imagine the scenes if..." moments tied
-      to how unlikely or likely something is. The bigger the gap between two percentages, the more room you have
-      to be playfully dramatic about how wild the upset would be.
-      HARD RULE: never base a joke on a player's or team's nationality, culture, flag, ethnicity, or any
-      national stereotype (e.g. don't joke about a country's weather, food, accent, history, or "as a [nationality]
-      person would..."). All humor must come from the MATCH SITUATION itself (the odds, the stakes, the drama,
-      the absurd hypothetical) - never from where someone is from.
-    - Write 3-4 short, punchy sentences in casual Aussie kid-commentator style.
-    - DO NOT always open with the same greeting or the same slang. Randomly pick a different way to open and a
-      different way to refer to "the experts"/percentages each time - mix it up across calls, never default to
-      the same pair of phrases. Invent your own wording each time rather than rotating a fixed list.
-    - Never say "data", "stats", "JSON", or anything technical - it should read like a real commentator hyping
-      up a match, just backed by real numbers presented in a fun way.
+    YOUR JOB: look at that stage grid and make your OWN call - Normal Time, Extra Time, or Penalties, and who
+    wins it that way. A wrong call is completely fine, this is just for fun - just make it an informed guess
+    based on those numbers, not a random pick.
 
-    Write the match story now:
+    STRICT RULES:
+    - MAXIMUM 2 short sentences. Total. That's the entire brief - be brutally concise, this is a compressed
+      hype line, not a story.
+    - Squeeze in all 3: the win favourite, the first-scorer pick, and your NT/ET/PK call.
+    - **Bold** the key names, teams and percentages.
+    - 1-2 emoji max.
+    - Say "chance" / "favoured" - never "odds", "bet", "stake", or anything gambling-related.
+    - Every player name needs their country right next to it (e.g. "PlayerName (Country)").
+    - No jokes based on nationality, culture, accent, or flag.
+    - Vary your opening words each time - don't reuse the same opener call after call.
+
+    Write it now (2 sentences max, no preamble):
     """
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
-            temperature=1.1,
-            max_tokens=500,
+            temperature=1.0,
+            max_tokens=120,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"DEBUG - Groq call failed: {repr(e)}")
-        return f"Hold onto your hats! The stats van is running late, but {home} vs {away} is going to be an absolute ripper of a match! ⚽"
+        return f"**{home}** vs **{away}** — buckle up, this one's a cracker! ⚽"
 
 # --- DATABASE CONNECTION ---
 @st.cache_resource(ttl=600)
@@ -995,10 +952,6 @@ with tab2:
                                     str(odds_data.get('Progression_Data', 'No data')),
                                     str(odds_data.get('First_Scorer_Data', 'No data'))
                                 )
-                                # Randomly decide whether this story mentions just the top scorer per team, or
-                                # also the 2nd-best - keeps the 2nd/3rd odds you enter actually useful sometimes,
-                                # without making every single story longer.
-                                match_facts["scorer_tier"] = random.choice([1, 2])
                                 narrative = generate_kid_friendly_narrative(match_facts)
                             # Convert markdown **bold** to real <strong> tags - markdown syntax does NOT get
                             # re-parsed once it's inside a raw HTML block, so we have to do this conversion
