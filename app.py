@@ -379,36 +379,35 @@ def generate_kid_friendly_narrative(facts: dict):
     )
 
     prompt = f"""
-    Kamu komentator sepak bola yang seru dan asik, nulis buat anak-anak yang lagi main tebak-tebakan bola. Tulis
-    dalam BAHASA INDONESIA yang santai dan gaul (bukan bahasa baku/formal), SANGAT SINGKAT. Anak-anak lagi nebak:
-    (1) siapa yang cetak gol duluan, (2) apakah sampai adu penalti, (3) siapa yang menang.
+    너는 신나고 재미있는 축구 캐스터야. 축구 예측 게임을 하는 아이들을 위해 글을 써줘. 반드시 한국어로,
+    캐주얼하고 발랄한 말투로 (딱딱한 격식체 말고), 아주 짧게 써줘. 아이들은 지금 (1) 누가 먼저 골을 넣을지,
+    (2) 승부차기까지 갈지, (3) 누가 이길지 맞히는 중이야.
 
-    PERTANDINGAN: {home} vs {away}
+    경기: {home} vs {away}
 
-    FAKTA (sudah dihitung - tinggal diceritakan, jangan hitung ulang):
-    - Peluang menang: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
-    - Paling mungkin cetak gol pertama: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
+    데이터 (이미 계산됨 - 그대로 설명만 해, 다시 계산하지 마):
+    - 승리 확률: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
+    - 첫 골 넣을 확률이 가장 높은 선수: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
       vs {facts.get('away_top_scorer')} ({away}) {facts.get('away_top_scorer_pct')}%
-    - Peluang pertandingan selesai di tiap babak: {stage_grid}
+    - 각 단계에서 경기가 끝날 확률: {stage_grid}
 
-    TUGASMU: lihat sendiri angka-angka di atas terus putuskan sendiri - pertandingan ini kemungkinan selesai di
-    waktu normal (NT), perpanjangan waktu (ET), atau adu penalti (PK), dan siapa yang menang lewat itu. Salah
-    tebak nggak apa-apa, ini cuma buat seru-seruan - yang penting tebakanmu berdasarkan angka di atas, bukan asal.
+    네가 할 일: 위 숫자들을 직접 보고 스스로 판단해 - 이 경기가 정규시간(NT), 연장전(ET), 아니면 승부차기(PK)
+    중 어디서 끝날 것 같은지, 그리고 그렇게 해서 누가 이길지 정해. 틀려도 완전 괜찮아, 그냥 재미로 하는
+    거니까 - 중요한 건 대충 찍는 게 아니라 저 숫자들을 근거로 한 판단이어야 한다는 거야.
 
-    ATURAN KETAT:
-    - MAKSIMAL 2 kalimat pendek. Total. Itu aja - harus SANGAT ringkas, ini cuma satu baris hype, bukan cerita.
-    - Masukkan ketiganya dalam ruang sekecil itu: jagoan menang, jagoan gol pertama, dan tebakanmu soal NT/ET/PK.
-    - **Bold** (markdown) nama pemain, nama tim, dan persentase penting.
-    - Maksimal 1-2 emoji.
-    - Pakai kata "peluang" / "diunggulkan" - JANGAN pakai kata "odds", "taruhan", "judi", atau apapun yang
-      berbau perjudian.
-    - Nama negara/tim tetap pakai nama aslinya (boleh Bahasa Inggris untuk nama negara/pemain), tapi kalimatnya
-      full Bahasa Indonesia gaul.
-    - Setiap nama pemain harus disertai negaranya di dekat situ (contoh: "PlayerName (Country)").
-    - Jangan bercanda soal kebangsaan, budaya, aksen, atau bendera.
-    - Ganti-ganti kalimat pembuka tiap kali dipanggil - jangan pakai pembuka yang sama terus-menerus.
+    엄격한 규칙:
+    - 최대 2문장. 딱 그만큼. 그게 전부야 - 엄청 짧고 압축된 한 줄 하이프여야 해, 긴 이야기가 아니라.
+    - 그 좁은 공간에 3가지를 다 넣어: 승리 유력 팀, 첫 골 유력 선수, 그리고 NT/ET/PK에 대한 네 판단.
+    - **볼드체** (마크다운)로 선수 이름, 팀 이름, 중요한 퍼센트를 강조해줘.
+    - 이모지는 최대 1-2개만.
+    - "확률" / "유력하다" 같은 표현을 써 - "배당률", "베팅", "도박" 같은 단어는 절대 쓰지 마.
+    - 국가/팀 이름은 원래 이름 그대로 써도 돼 (영어로 된 국가명/선수 이름 유지), 다만 문장 전체는 완전히
+      한국어 반말/캐주얼체로 써.
+    - 선수 이름을 언급할 땐 항상 그 옆에 소속 국가를 같이 써줘 (예: "PlayerName (Country)").
+    - 국적, 문화, 억양, 국기에 대한 농담은 하지 마.
+    - 부를 때마다 시작 문장을 다르게 해 - 매번 똑같은 오프닝을 반복하지 마.
 
-    Tulis sekarang (maksimal 2 kalimat, tanpa basa-basi pembuka):
+    지금 써줘 (최대 2문장, 서론 없이 바로):
     """
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -421,7 +420,7 @@ def generate_kid_friendly_narrative(facts: dict):
         return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"DEBUG - Groq call failed: {repr(e)}")
-        return f"**{home}** vs **{away}** — siap-siap, ini bakal seru banget! ⚽"
+        return f"**{home}** vs **{away}** — 기대해, 이거 완전 재밌겠는데! ⚽"
 
 # --- DATABASE CONNECTION ---
 @st.cache_resource(ttl=600)
@@ -600,20 +599,6 @@ with tab1:
     st.divider()
     st.markdown("🎁 **Prize:** $20 Kmart Gift Card up for grabs.")
 
-    if not once_off_df.empty:
-        st.divider()
-        st.markdown("### 🏅 Golden Boot & 🏆 Champion Picks")
-        oo_display_rows = []
-        for _, r in once_off_df.iterrows():
-            oo_display_rows.append({
-                "Player": r.get("Participant", ""),
-                "🏅 Golden Boot Pick": r.get("GoldenBoot_Pick", "") or "—",
-                "🏆 Champion Pick": clean_country_name(str(r.get("Champion_Pick", ""))) or "—",
-            })
-        st.dataframe(pd.DataFrame(oo_display_rows), use_container_width=True, hide_index=True)
-        if not is_once_off_locked():
-            st.caption("Picks are still editable until 5 July 2026, 3:00 AM AEDT.")
-
     # ==========================================
     # ACTIVE PREDICTIONS — ALL PARTICIPANTS
     # Shows today's not-yet-scored matches. From 5:00 PM AEDT onward, also
@@ -685,7 +670,29 @@ with tab1:
                             p_row["🎯 Method"] = p_method or "—"
                         p_rows.append(p_row)
 
-                st.dataframe(pd.DataFrame(p_rows), use_container_width=True, hide_index=True)
+                p_df = pd.DataFrame(p_rows).set_index("Player")
+                st.dataframe(p_df, use_container_width=True)
+
+    # ==========================================
+    # GOLDEN BOOT & CHAMPION PICKS — moved to the bottom + collapsible.
+    # These are FYI-only once locked (5 July 3AM AEDT), so they don't need
+    # prime real estate above the live active-predictions table.
+    # ==========================================
+    if not once_off_df.empty:
+        st.divider()
+        with st.expander("🏅 Golden Boot & 🏆 Champion Picks"):
+            oo_display_rows = []
+            for _, r in once_off_df.iterrows():
+                oo_display_rows.append({
+                    "Player": r.get("Participant", ""),
+                    "🏅 Golden Boot Pick": r.get("GoldenBoot_Pick", "") or "—",
+                    "🏆 Champion Pick": clean_country_name(str(r.get("Champion_Pick", ""))) or "—",
+                })
+            st.dataframe(pd.DataFrame(oo_display_rows), use_container_width=True, hide_index=True)
+            if not is_once_off_locked():
+                st.caption("Picks are still editable until 5 July 2026, 3:00 AM AEDT.")
+            else:
+                st.caption("🔒 Locked in — FYI only now.")
 
 # ==========================================
 # TAB 2: SUBMIT PREDICTIONS
@@ -700,71 +707,73 @@ with tab2:
 
         # ==========================================
         # PINNED: ONCE-OFF PREDICTIONS (Golden Boot + Champion)
+        # Only shown here while still editable. Once locked, it's FYI-only and
+        # already visible in the collapsible section at the bottom of the
+        # Leaderboard tab - no need to repeat it here too.
         # ==========================================
-        st.markdown("### 🏅 Golden Boot & 🏆 Champion Picks")
         once_off_locked = is_once_off_locked()
 
-        if golden_boot_df.empty or once_off_df.empty:
+        if once_off_locked:
+            pass  # locked - nothing to edit here, see Leaderboard tab for the FYI view
+        elif golden_boot_df.empty or once_off_df.empty:
+            st.markdown("### 🏅 Golden Boot & 🏆 Champion Picks")
             st.warning("⚠️ Once-off predictions aren't set up yet in the sheet (golden_boot_candidates / once_off_predictions tabs).")
         else:
+            st.markdown("### 🏅 Golden Boot & 🏆 Champion Picks")
             existing_row = once_off_df[once_off_df['Participant'] == user]
             current_gb_pick = str(existing_row.iloc[0].get('GoldenBoot_Pick', '')).strip() if not existing_row.empty else ""
             current_champ_pick = str(existing_row.iloc[0].get('Champion_Pick', '')).strip() if not existing_row.empty else ""
 
-            if once_off_locked:
-                st.info(f"🔒 Once-off predictions are **locked** (deadline was 5 July, 3:00 AM AEDT). "
-                        f"Your picks: 🏅 **{current_gb_pick or '—'}** | 🏆 **{clean_country_name(current_champ_pick) or '—'}**")
-            else:
-                st.caption(f"⏰ Locks 5 July 2026, 3:00 AM AEDT. Worth **50 pts each**, scored at the Final.")
-                oo_col1, oo_col2 = st.columns(2)
+            st.caption(f"⏰ Locks 5 July 2026, 3:00 AM AEDT. Worth **50 pts each**, scored at the Final.")
+            oo_col1, oo_col2 = st.columns(2)
 
-                with oo_col1:
-                    st.markdown("**🏅 Golden Boot Winner**")
-                    gb_names = golden_boot_df['Player_Name'].tolist()
-                    gb_default_idx = (gb_names.index(current_gb_pick) + 1) if current_gb_pick in gb_names else 0
-                    gb_pick = st.selectbox("Pick your Golden Boot winner:", ["Select player..."] + gb_names, index=gb_default_idx, key="gb_pick_select")
-                    if gb_pick != "Select player...":
-                        gb_row = golden_boot_df[golden_boot_df['Player_Name'] == gb_pick].iloc[0]
-                        img_path = gb_row.get('Image_File', '')
-                        if img_path and os.path.exists(img_path):
-                            st.image(img_path, width=120, caption=f"{gb_pick} ({gb_row.get('Team','')})")
-                        else:
-                            st.caption(f"{gb_pick} ({gb_row.get('Team','')})")
-
-                with oo_col2:
-                    st.markdown("**🏆 Tournament Champion**")
-                    champ_options, champ_raw_lookup = build_champion_options(matches_df, team_status_df)
-                    current_champ_clean = clean_country_name(current_champ_pick)
-                    champ_default_idx = (champ_options.index(current_champ_clean) + 1) if current_champ_clean in champ_options else 0
-                    champ_pick = st.selectbox("Pick the World Cup Champion:", ["Select country..."] + champ_options, index=champ_default_idx, key="champ_pick_select")
-                    if champ_pick != "Select country...":
-                        flag_src = get_flag_url(champ_raw_lookup.get(champ_pick, champ_pick))
-                        if flag_src:
-                            st.image(flag_src, width=90, caption=champ_pick)
-                        else:
-                            st.caption(champ_pick)
-
-                if st.button("💾 Save Once-Off Picks"):
-                    if gb_pick == "Select player..." or champ_pick == "Select country...":
-                        st.error("Please pick both a Golden Boot winner and a Champion before saving.")
+            with oo_col1:
+                st.markdown("**🏅 Golden Boot Winner**")
+                gb_names = golden_boot_df['Player_Name'].tolist()
+                gb_default_idx = (gb_names.index(current_gb_pick) + 1) if current_gb_pick in gb_names else 0
+                gb_pick = st.selectbox("Pick your Golden Boot winner:", ["Select player..."] + gb_names, index=gb_default_idx, key="gb_pick_select")
+                if gb_pick != "Select player...":
+                    gb_row = golden_boot_df[golden_boot_df['Player_Name'] == gb_pick].iloc[0]
+                    img_path = gb_row.get('Image_File', '')
+                    if img_path and os.path.exists(img_path):
+                        st.image(img_path, width=120, caption=f"{gb_pick} ({gb_row.get('Team','')})")
                     else:
-                        try:
-                            oo_headers = get_headers(once_off_worksheet, "once_off_predictions")
-                            row_num = None
-                            for idx, r in once_off_df.reset_index(drop=True).iterrows():
-                                if str(r.get("Participant", "")).strip() == user:
-                                    row_num = idx + 2
-                                    break
-                            if row_num is None:
-                                st.error(f"Couldn't find a row for {user} in once_off_predictions — check the sheet has all 6 participants listed.")
-                            else:
-                                once_off_worksheet.update_cell(row_num, oo_headers.index("GoldenBoot_Pick") + 1, gb_pick)
-                                once_off_worksheet.update_cell(row_num, oo_headers.index("Champion_Pick") + 1, champ_pick)
-                                st.success("Once-off picks saved! 🎉")
-                                st.cache_data.clear()
-                                st.rerun()
-                        except Exception as write_err:
-                            st.error(f"Failed to save once-off picks: {write_err}")
+                        st.caption(f"{gb_pick} ({gb_row.get('Team','')})")
+
+            with oo_col2:
+                st.markdown("**🏆 Tournament Champion**")
+                champ_options, champ_raw_lookup = build_champion_options(matches_df, team_status_df)
+                current_champ_clean = clean_country_name(current_champ_pick)
+                champ_default_idx = (champ_options.index(current_champ_clean) + 1) if current_champ_clean in champ_options else 0
+                champ_pick = st.selectbox("Pick the World Cup Champion:", ["Select country..."] + champ_options, index=champ_default_idx, key="champ_pick_select")
+                if champ_pick != "Select country...":
+                    flag_src = get_flag_url(champ_raw_lookup.get(champ_pick, champ_pick))
+                    if flag_src:
+                        st.image(flag_src, width=90, caption=champ_pick)
+                    else:
+                        st.caption(champ_pick)
+
+            if st.button("💾 Save Once-Off Picks"):
+                if gb_pick == "Select player..." or champ_pick == "Select country...":
+                    st.error("Please pick both a Golden Boot winner and a Champion before saving.")
+                else:
+                    try:
+                        oo_headers = get_headers(once_off_worksheet, "once_off_predictions")
+                        row_num = None
+                        for idx, r in once_off_df.reset_index(drop=True).iterrows():
+                            if str(r.get("Participant", "")).strip() == user:
+                                row_num = idx + 2
+                                break
+                        if row_num is None:
+                            st.error(f"Couldn't find a row for {user} in once_off_predictions — check the sheet has all 6 participants listed.")
+                        else:
+                            once_off_worksheet.update_cell(row_num, oo_headers.index("GoldenBoot_Pick") + 1, gb_pick)
+                            once_off_worksheet.update_cell(row_num, oo_headers.index("Champion_Pick") + 1, champ_pick)
+                            st.cache_data.clear()
+                            st.toast("✅ Once-off picks saved!", icon="✅")
+                            st.rerun()
+                    except Exception as write_err:
+                        st.error(f"Failed to save once-off picks: {write_err}")
 
         st.divider()
         st.markdown(f"### Your Active Predictions Overview ({user})")
@@ -877,15 +886,24 @@ with tab2:
             home_clean = clean_country_name(m_row['Home_Team'])
             away_clean = clean_country_name(m_row['Away_Team'])
 
-            f_col1, f_col2, f_col3 = st.columns([2, 1, 2])
-            with f_col1:
-                if get_flag_url(m_row['Home_Team']): st.image(get_flag_url(m_row['Home_Team']), width=90)
-                st.markdown(f"### {home_clean}")
-            with f_col2:
-                st.markdown("<h2 style='text-align: center; margin-top: 20px;'>VS</h2>", unsafe_allow_html=True)
-            with f_col3:
-                if get_flag_url(m_row['Away_Team']): st.image(get_flag_url(m_row['Away_Team']), width=90)
-                st.markdown(f"### {away_clean}")
+            home_flag = get_flag_url(m_row['Home_Team'])
+            away_flag = get_flag_url(m_row['Away_Team'])
+            home_flag_html = f'<img src="{home_flag}" style="width:28px; vertical-align:middle; margin-right:6px; border-radius:3px;">' if home_flag else ''
+            away_flag_html = f'<img src="{away_flag}" style="width:28px; vertical-align:middle; margin-right:6px; border-radius:3px;">' if away_flag else ''
+
+            # A single flex row (not st.columns, which stacks vertically on mobile) so
+            # "Country1 vs Country2" always stays on one horizontal line, phones included.
+            st.markdown(
+                f"""
+                <div style='display:flex; align-items:center; justify-content:center; flex-wrap:nowrap;
+                            gap:8px; margin:8px 0; white-space:nowrap; overflow-x:auto;'>
+                    <span style='font-size:clamp(0.85em, 3.8vw, 1.25em); font-weight:700;'>{home_flag_html}{home_clean}</span>
+                    <span style='font-size:0.8em; opacity:0.55; font-weight:600;'>vs</span>
+                    <span style='font-size:clamp(0.85em, 3.8vw, 1.25em); font-weight:700;'>{away_flag_html}{away_clean}</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
             st.write("---")
 
@@ -926,7 +944,8 @@ with tab2:
                             sheet_first_val = m_row['Home_Team'] if p_first == home_clean else (m_row['Away_Team'] if p_first == away_clean else "No Goal")
                             target_ws.update_cell(sheet_row_num, first_col_idx, sheet_first_val)
                             target_ws.update_cell(sheet_row_num, score_col_idx, predicted_score_str)
-                            st.success("Prediction cleanly saved to Google Sheets!")
+                            st.cache_data.clear()
+                            st.toast("✅ Prediction saved!", icon="✅")
                             st.rerun()
                         except Exception as write_err:
                             st.error(f"Failed to update spreadsheet: {write_err}")
@@ -1039,7 +1058,8 @@ with tab2:
                                 target_ws.update_cell(sheet_row_num, time_col_idx, q4_time)
                                 target_ws.update_cell(sheet_row_num, method_col_idx, q5_method)
                             
-                            st.success("Knockout predictions cleanly saved to Google Sheets!")
+                            st.cache_data.clear()
+                            st.toast("✅ Prediction saved!", icon="✅")
                             st.rerun()
                         except Exception as write_err:
                             st.error(f"Failed to update spreadsheet: {write_err}")
@@ -1237,8 +1257,8 @@ with tab3:
                                         leaderboard_worksheet.update_cell(l_sheet_row, pts_col_idx, current_pts + points_to_add)
                                         break
 
-                        st.success("🏆 Match finalized! Scores stored and Leaderboard updated successfully.")
                         st.cache_data.clear()
+                        st.toast("🏆 Match finalized! Leaderboard updated.", icon="🏆")
                         st.rerun()
 
                 except Exception as write_err:
@@ -1302,8 +1322,8 @@ with tab3:
                                             leaderboard_worksheet.update_cell(l_sheet_row, pts_col_idx, current_pts + total_add)
                                             break
 
-                            st.success("🏅 Once-off points awarded and leaderboard updated!")
                             st.cache_data.clear()
+                            st.toast("🏅 Once-off points awarded!", icon="🏅")
                             st.rerun()
                         except Exception as write_err:
                             st.error(f"Failed to save once-off results: {write_err}")
