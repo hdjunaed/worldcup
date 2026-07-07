@@ -1124,11 +1124,15 @@ with tab2:
                         q2_home_score, q2_away_score = 0, 0
                         st.info("🔒 You picked No Goal — score is automatically locked to **0-0**! Already locked in for you. 🎯")
                     else:
+                        # Default the scoring team's box to 1 (their goal tally can't be 0
+                        # since they were picked to score first) - still fully editable.
+                        default_home_score = 1 if q1_first == home_clean else 0
+                        default_away_score = 1 if q1_first == away_clean else 0
                         sc_col1, sc_col2 = st.columns(2)
                         with sc_col1:
-                            q2_home_score = st.number_input(f"{home_clean} Score", min_value=0, max_value=20, step=1, value=0, key=f"q2home_{m_id}")
+                            q2_home_score = st.number_input(f"{home_clean} Score", min_value=0, max_value=20, step=1, value=default_home_score, key=f"q2home_{m_id}")
                         with sc_col2:
-                            q2_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=0, key=f"q2away_{m_id}")
+                            q2_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=default_away_score, key=f"q2away_{m_id}")
                         if q2_home_score == 0 and q2_away_score == 0:
                             st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 else:
@@ -1150,15 +1154,21 @@ with tab2:
                     q3_adv = st.radio("Select Winner:", [home_clean, away_clean], index=None, key=f"q3_{m_id}")
                     st.markdown("</div>", unsafe_allow_html=True)
 
+                # For QF+, "no goal" is driven by the exact score prediction itself (Q2), not
+                # the Who-scores-first radio, since those two answers could otherwise drift out
+                # of sync. For Round of 16-only matches, Q1 is still the source of truth.
+                qf_zero_zero = qf_plus and (q2_home_score == 0 and q2_away_score == 0)
+
                 q4_time = None
                 q5_method = None
                 if round16_plus:
                     st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
                     q4_points_label = "10 pts" if qf_plus else "20 pts"
                     st.markdown(f"#### ⏱️ What time does the 1st goal go in? ({q4_points_label})")
-                    if q1_first == "No Goal (0-0)":
+                    time_locked = qf_zero_zero if qf_plus else (q1_first == "No Goal (0-0)")
+                    if time_locked:
                         q4_time = "No Goal"
-                        st.info("🔒 You picked No Goal — Time of 1st Goal is automatically locked to **No Goal**.")
+                        st.info("🔒 No goals predicted — Time of 1st Goal is automatically locked to **No Goal**.")
                     else:
                         bracket_options = QF_TIME_BRACKET_OPTIONS if qf_plus else TIME_BRACKET_OPTIONS
                         q4_time = st.selectbox("Select time bracket:", ["Select bracket..."] + bracket_options, key=f"q4_{m_id}")
@@ -1168,7 +1178,7 @@ with tab2:
 
                     st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
                     st.markdown("#### 🎯 How does the 1st goal happen?")
-                    if q1_first == "No Goal (0-0)" or q4_time == "No Goal":
+                    if time_locked or q4_time == "No Goal":
                         q5_method = "No Goal"
                         st.info("🔒 Locked to **No Goal**.")
                     else:
@@ -1182,18 +1192,32 @@ with tab2:
                     st.caption("Any goal in Normal Time or Extra Time counts — penalty shootout goals don't count.")
                     if not scorer_ladder:
                         st.warning("⚠️ No scorer odds found for this match — check First_Scorer_Data in Match_Odds_Feed.")
-                    elif q2_home_score == 0 and q2_away_score == 0:
+                    elif qf_zero_zero:
                         q6_pick = "No Goal"
-                        st.info("🔒 You predicted 0-0 — automatically locked to **No Goal**.")
+                        st.info(f"🔒 You predicted 0-0 — automatically locked to **No Goal** (worth **{Q6_CATCHALL_POINTS} pts** if the actual result is also 0-0).")
                     else:
+                        home_scored = q2_home_score > 0
+                        away_scored = q2_away_score > 0
+                        if home_scored and not away_scored:
+                            eligible_players = [e for e in scorer_ladder if e["country"] == home_clean]
+                            st.caption(f"Only showing {home_clean} players — you predicted {away_clean} to score 0.")
+                        elif away_scored and not home_scored:
+                            eligible_players = [e for e in scorer_ladder if e["country"] == away_clean]
+                            st.caption(f"Only showing {away_clean} players — you predicted {home_clean} to score 0.")
+                        else:
+                            eligible_players = scorer_ladder
+
                         label_to_entry = {}
                         option_labels = ["Select player..."]
-                        for e in scorer_ladder:
+                        for e in eligible_players:
                             label = f"{temp_emoji(e['rank_fraction'])} {e['name']} ({e['country']}) — {e['points']} pts"
                             option_labels.append(label)
                             label_to_entry[label] = e
 
-                        picked_label = st.selectbox("Pick a player:", option_labels, key=f"q6_{m_id}")
+                        # Key includes which side(s) are eligible so the picker resets
+                        # cleanly if the person changes their exact-score prediction.
+                        q6_key = f"q6_{m_id}_{int(home_scored)}_{int(away_scored)}"
+                        picked_label = st.selectbox("Pick a player:", option_labels, key=q6_key)
                         if picked_label == "Select player...":
                             q6_pick = None
                         else:
@@ -1210,10 +1234,21 @@ with tab2:
                         q1_first and (q2_home_score is not None and q2_away_score is not None)
                         and q4_time and q5_method and q6_pick
                     )
-                elif round16_plus:
+
+                    # Cross-question validation: the "who scores first" pick and the exact
+                    # score prediction must agree with each other.
+                    qf_consistency_error = None
+                    if q1_first == home_clean and q2_home_score == 0:
+                        qf_consistency_error = f"❌ You picked {home_clean} to score first, so their score can't be 0!"
+                    elif q1_first == away_clean and q2_away_score == 0:
+                        qf_consistency_error = f"❌ You picked {away_clean} to score first, so their score can't be 0!"
+                else:
+                    qf_consistency_error = None
+
+                if round16_plus and not qf_plus:
                     num_questions_label = 5
                     required_answered = bool(q1_first and q2_gap and q3_adv and q4_time and q5_method)
-                else:
+                elif not qf_plus and not round16_plus:
                     num_questions_label = 3
                     required_answered = bool(q1_first and q2_gap and q3_adv)
 
@@ -1222,6 +1257,8 @@ with tab2:
                         st.error("This match has already kicked off! Changing predictions is locked.")
                     elif not required_answered:
                         st.warning(f"⚠️ Please answer all {num_questions_label} questions before submitting!")
+                    elif qf_consistency_error:
+                        st.error(qf_consistency_error)
                     else:
                         try:
                             headers = get_headers(target_ws, target_ws.title)
