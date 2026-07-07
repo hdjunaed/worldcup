@@ -726,7 +726,7 @@ with tab1:
                             p_away_sc = str(arow.get(f'{p}_AwayScore', "")).strip()
                             p_row["🔢 Score"] = f"{p_home_sc}-{p_away_sc}" if p_home_sc != "" and p_away_sc != "" else "—"
                             p_nominated = str(arow.get(f'{p}_NominatedScorer', "")).strip()
-                            p_row["🎯 1st Scorer"] = p_nominated or "—"
+                            p_row["👤 Scorer Pick"] = p_nominated or "—"
                         else:
                             p_gap = str(arow.get(f'{p}_GoalGap', "")).strip()
                             p_row["📏 Goal Gap"] = p_gap or "—"
@@ -888,12 +888,12 @@ with tab2:
                 ko_row["📏 Goal Gap"] = "N/A"
                 ko_row["🔢 Score"] = f"{home_sc}-{away_sc}" if home_sc != "" and away_sc != "" else "—"
                 nominated = str(row.get(f'{user}_NominatedScorer', "")).strip()
-                ko_row["🎯 1st Scorer"] = nominated or "—"
+                ko_row["👤 Scorer Pick"] = nominated or "—"
             else:
                 goal_gap = str(row.get(f'{user}_GoalGap', "")).strip()
                 ko_row["📏 Goal Gap"] = goal_gap or "—"
                 ko_row["🔢 Score"] = "N/A"
-                ko_row["🎯 1st Scorer"] = "N/A"
+                ko_row["👤 Scorer Pick"] = "N/A"
 
             if is_round16_plus(m_id):
                 time_pick = str(row.get(f'{user}_TimeOfFirstGoal', "")).strip()
