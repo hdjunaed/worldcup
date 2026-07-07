@@ -379,35 +379,33 @@ def generate_kid_friendly_narrative(facts: dict):
     )
 
     prompt = f"""
-    너는 신나고 재미있는 축구 캐스터야. 축구 예측 게임을 하는 아이들을 위해 글을 써줘. 반드시 한국어로,
-    캐주얼하고 발랄한 말투로 (딱딱한 격식체 말고), 아주 짧게 써줘. 아이들은 지금 (1) 누가 먼저 골을 넣을지,
-    (2) 승부차기까지 갈지, (3) 누가 이길지 맞히는 중이야.
+    You're a fun, kid-friendly Aussie sports commentator. Write an EXTREMELY SHORT pre-match hype line for a kids'
+    prediction game. Players are guessing: (1) who scores first, (2) if it goes to penalties, (3) who wins.
 
-    경기: {home} vs {away}
+    MATCH: {home} vs {away}
 
-    데이터 (이미 계산됨 - 그대로 설명만 해, 다시 계산하지 마):
-    - 승리 확률: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
-    - 첫 골 넣을 확률이 가장 높은 선수: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
+    FACTS (already calculated - just narrate them, don't do any maths):
+    - Win chance: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
+    - Most likely to score first: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
       vs {facts.get('away_top_scorer')} ({away}) {facts.get('away_top_scorer_pct')}%
-    - 각 단계에서 경기가 끝날 확률: {stage_grid}
+    - Chance the match is decided in each stage: {stage_grid}
 
-    네가 할 일: 위 숫자들을 직접 보고 스스로 판단해 - 이 경기가 정규시간(NT), 연장전(ET), 아니면 승부차기(PK)
-    중 어디서 끝날 것 같은지, 그리고 그렇게 해서 누가 이길지 정해. 틀려도 완전 괜찮아, 그냥 재미로 하는
-    거니까 - 중요한 건 대충 찍는 게 아니라 저 숫자들을 근거로 한 판단이어야 한다는 거야.
+    YOUR JOB: look at that stage grid and make your OWN call - Normal Time, Extra Time, or Penalties, and who
+    wins it that way. A wrong call is completely fine, this is just for fun - just make it an informed guess
+    based on those numbers, not a random pick.
 
-    엄격한 규칙:
-    - 최대 2문장. 딱 그만큼. 그게 전부야 - 엄청 짧고 압축된 한 줄 하이프여야 해, 긴 이야기가 아니라.
-    - 그 좁은 공간에 3가지를 다 넣어: 승리 유력 팀, 첫 골 유력 선수, 그리고 NT/ET/PK에 대한 네 판단.
-    - **볼드체** (마크다운)로 선수 이름, 팀 이름, 중요한 퍼센트를 강조해줘.
-    - 이모지는 최대 1-2개만.
-    - "확률" / "유력하다" 같은 표현을 써 - "배당률", "베팅", "도박" 같은 단어는 절대 쓰지 마.
-    - 국가/팀 이름은 원래 이름 그대로 써도 돼 (영어로 된 국가명/선수 이름 유지), 다만 문장 전체는 완전히
-      한국어 반말/캐주얼체로 써.
-    - 선수 이름을 언급할 땐 항상 그 옆에 소속 국가를 같이 써줘 (예: "PlayerName (Country)").
-    - 국적, 문화, 억양, 국기에 대한 농담은 하지 마.
-    - 부를 때마다 시작 문장을 다르게 해 - 매번 똑같은 오프닝을 반복하지 마.
+    STRICT RULES:
+    - MAXIMUM 2 short sentences. Total. That's the entire brief - be brutally concise, this is a compressed
+      hype line, not a story.
+    - Squeeze in all 3: the win favourite, the first-scorer pick, and your NT/ET/PK call.
+    - **Bold** the key names, teams and percentages.
+    - 1-2 emoji max.
+    - Say "chance" / "favoured" - never "odds", "bet", "stake", or anything gambling-related.
+    - Every player name needs their country right next to it (e.g. "PlayerName (Country)").
+    - No jokes based on nationality, culture, accent, or flag.
+    - Vary your opening words each time - don't reuse the same opener call after call.
 
-    지금 써줘 (최대 2문장, 서론 없이 바로):
+    Write it now (2 sentences max, no preamble):
     """
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -420,7 +418,7 @@ def generate_kid_friendly_narrative(facts: dict):
         return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"DEBUG - Groq call failed: {repr(e)}")
-        return f"**{home}** vs **{away}** — 기대해, 이거 완전 재밌겠는데! ⚽"
+        return f"**{home}** vs **{away}** — buckle up, this one's a cracker! ⚽"
 
 # --- DATABASE CONNECTION ---
 @st.cache_resource(ttl=600)
@@ -571,6 +569,68 @@ def is_round16_plus(match_id):
 def is_once_off_locked():
     return get_current_aest() >= ONCE_OFF_LOCK_DATETIME
 
+# ==========================================
+# QUARTER FINAL+ CONSTANTS (Match_ID >= 97)
+# Exact score replaces Goal Gap, simplified 4-bracket time (10pts, was 20),
+# and a new "who scores 1st" player ladder question (Q6).
+# ==========================================
+QF_MATCH_ID_THRESHOLD = 97
+QF_TIME_BRACKET_OPTIONS = ["1st Half NT", "2nd Half NT", "1st Half ET", "2nd Half ET"]
+Q6_CATCHALL_LABEL = "None of these players"
+Q6_CATCHALL_POINTS = 10
+
+def is_qf_plus(match_id):
+    try:
+        return int(match_id) >= QF_MATCH_ID_THRESHOLD
+    except Exception:
+        return False
+
+def parse_scorer_ladder(first_scorer_str):
+    """Parse 'Name (Country) Odds, Name (Country) Odds, ...' from Match_Odds_Feed's
+    First_Scorer_Data. Returns entries ranked ascending by odds (favourite first),
+    each tagged with its points on the risk/reward ladder: 5, 8, 11, 14... (+3 per
+    rank) - this naturally scales to however many named players are actually given,
+    rather than assuming exactly 6."""
+    entries = []
+    for chunk in str(first_scorer_str).split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        m = re.match(r"^(.*?)\s+\(([^)]+)\)\s+([\d.]+)$", chunk)
+        if m:
+            name, country, odds = m.group(1).strip(), m.group(2).strip(), float(m.group(3))
+            entries.append({"name": name, "country": clean_country_name(country), "odds": odds})
+    entries.sort(key=lambda e: e["odds"])  # ascending odds = shortest price = favourite first
+    n = len(entries)
+    for i, e in enumerate(entries):
+        e["points"] = 5 + 3 * i
+        e["rank_fraction"] = (i / (n - 1)) if n > 1 else 0
+    return entries
+
+def temp_emoji(fraction):
+    """Cold (favourite, low points) -> hot (longshot, high points) emoji scale.
+    Native st.selectbox/st.radio only render plain text labels, so this is the
+    closest we can get to a visual gradient without a custom HTML picker."""
+    if fraction <= 0.15: return "🧊"
+    if fraction <= 0.35: return "❄️"
+    if fraction <= 0.55: return "🌤️"
+    if fraction <= 0.75: return "☀️"
+    if fraction <= 0.9:  return "🔥"
+    return "🔥🔥"
+
+def get_player_photo(player_name):
+    """Looks up a player's photo from golden_boot_candidates by exact name match.
+    Returns None (no photo, not an error) if the sheet is empty, the player isn't
+    listed there yet, or the image file doesn't exist - Q6 still works fine without
+    a photo, it's a nice-to-have."""
+    if golden_boot_df.empty or 'Player_Name' not in golden_boot_df.columns:
+        return None
+    match = golden_boot_df[golden_boot_df['Player_Name'].str.strip() == str(player_name).strip()]
+    if match.empty:
+        return None
+    img_path = match.iloc[0].get('Image_File', '')
+    return img_path if img_path and os.path.exists(img_path) else None
+
 tab1, tab2, tab3 = st.tabs(["📊 Leaderboard", "⚽ Submit Predictions", "🔒 Admin Engine"])
 
 # ==========================================
@@ -655,14 +715,21 @@ with tab1:
                         })
                     else:
                         p_first = str(arow.get(f'{p}_FirstScorer', "")).strip()
-                        p_gap = str(arow.get(f'{p}_GoalGap', "")).strip()
                         p_qual = str(arow.get(f'{p}_Qualifier', "")).strip()
                         p_row = {
                             "Player": p,
                             "⚽ First Scorer": clean_country_name(p_first) or "—",
-                            "📏 Goal Gap": p_gap or "—",
                             "🏆 Advances": clean_country_name(p_qual) or "—",
                         }
+                        if is_qf_plus(a_mid):
+                            p_home_sc = str(arow.get(f'{p}_HomeScore', "")).strip()
+                            p_away_sc = str(arow.get(f'{p}_AwayScore', "")).strip()
+                            p_row["🔢 Score"] = f"{p_home_sc}-{p_away_sc}" if p_home_sc != "" and p_away_sc != "" else "—"
+                            p_nominated = str(arow.get(f'{p}_NominatedScorer', "")).strip()
+                            p_row["🎯 1st Scorer"] = p_nominated or "—"
+                        else:
+                            p_gap = str(arow.get(f'{p}_GoalGap', "")).strip()
+                            p_row["📏 Goal Gap"] = p_gap or "—"
                         if is_round16_plus(a_mid):
                             p_time = str(arow.get(f'{p}_TimeOfFirstGoal', "")).strip()
                             p_method = str(arow.get(f'{p}_MethodOfFirstGoal', "")).strip()
@@ -804,7 +871,6 @@ with tab2:
             m_id = row['Match_ID']
             first_scorer = str(row.get(f'{user}_FirstScorer', "")).strip()
             qualifier = str(row.get(f'{user}_Qualifier', "")).strip()
-            goal_gap = str(row.get(f'{user}_GoalGap', "")).strip()
 
             ko_row = {
                 "Match ID": m_id,
@@ -814,9 +880,21 @@ with tab2:
                 "🏳️ Away": get_flag_url(row['Away_Team']),
                 "Kickoff (AEST)": row['Kickoff_AEST'].strftime('%a, %d %b, %I:%M %p'),
                 "⚽ First Scorer": clean_country_name(first_scorer) if first_scorer else "—",
-                "📏 Goal Gap": goal_gap or "—",
                 "🏆 Advances": clean_country_name(qualifier) if qualifier else "—",
             }
+            if is_qf_plus(m_id):
+                home_sc = str(row.get(f'{user}_HomeScore', "")).strip()
+                away_sc = str(row.get(f'{user}_AwayScore', "")).strip()
+                ko_row["📏 Goal Gap"] = "N/A"
+                ko_row["🔢 Score"] = f"{home_sc}-{away_sc}" if home_sc != "" and away_sc != "" else "—"
+                nominated = str(row.get(f'{user}_NominatedScorer', "")).strip()
+                ko_row["🎯 1st Scorer"] = nominated or "—"
+            else:
+                goal_gap = str(row.get(f'{user}_GoalGap', "")).strip()
+                ko_row["📏 Goal Gap"] = goal_gap or "—"
+                ko_row["🔢 Score"] = "N/A"
+                ko_row["🎯 1st Scorer"] = "N/A"
+
             if is_round16_plus(m_id):
                 time_pick = str(row.get(f'{user}_TimeOfFirstGoal', "")).strip()
                 method_pick = str(row.get(f'{user}_MethodOfFirstGoal', "")).strip()
@@ -951,38 +1029,56 @@ with tab2:
                             st.error(f"Failed to update spreadsheet: {write_err}")
 
             else:
-                # KNOCKOUT STAGE — 3-QUESTION (Round of 32) OR 5-QUESTION (Round of 16+) FORMAT
+                # KNOCKOUT STAGE — 3-Q (R32) / 5-Q (R16-QF-1) / 6-Q (QF+, Match_ID >= 97) FORMAT
                 round16_plus = is_round16_plus(m_id)
-                max_pts = 60 if round16_plus else 30
-                st.info(f"🏆 Knockout Stage: {max_pts} Points Total")
-                
+                qf_plus = is_qf_plus(m_id)
+
                 # --- GOOGLE AI STUDIO NARRATIVE INJECTION ---
+                odds_data = None
                 if not odds_df.empty:
-                    # Find the odds row for this match ID
                     match_odds_row = odds_df[odds_df['Match_ID'].astype(str) == str(m_id)]
                     if not match_odds_row.empty:
                         odds_data = match_odds_row.iloc[0]
-                        
-                        # Only run the AI if the GOOGLE_API_KEY is present in secrets
-                        if "GOOGLE_API_KEY" in st.secrets:
-                            with st.spinner("🎤 Crossing to the commentary box for the pre-match scoop..."):
-                                match_facts = compute_match_probabilities(
-                                    home_clean,
-                                    away_clean,
-                                    odds_data.get('Qualify_Home', '?'),
-                                    odds_data.get('Qualify_Away', '?'),
-                                    str(odds_data.get('Progression_Data', 'No data')),
-                                    str(odds_data.get('First_Scorer_Data', 'No data'))
-                                )
-                                narrative = generate_kid_friendly_narrative(match_facts)
-                            # Convert markdown **bold** to real <strong> tags - markdown syntax does NOT get
-                            # re-parsed once it's inside a raw HTML block, so we have to do this conversion
-                            # ourselves before injecting it into the story-card div.
-                            narrative_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", narrative)
-                            # Display it in a styled custom box
-                            st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative_html}<br><br><span style='font-size:0.7em; opacity:0.5;'>⚡ Powered by Groq</span></div>", unsafe_allow_html=True)
-                        else:
-                            st.warning("⚠️ Commentary offline. Missing GOOGLE_API_KEY in Streamlit secrets.")
+
+                # For QF+, the Q6 player ladder comes straight from First_Scorer_Data -
+                # parsed once here so we can both show the max-points banner accurately
+                # and build the Q6 picker further down.
+                scorer_ladder = []
+                if qf_plus and odds_data is not None:
+                    scorer_ladder = parse_scorer_ladder(str(odds_data.get('First_Scorer_Data', '')))
+
+                if qf_plus:
+                    q6_max_pts = max([e['points'] for e in scorer_ladder], default=Q6_CATCHALL_POINTS)
+                    max_pts = 10 + 20 + 10 + 10 + 10 + q6_max_pts  # Q1+Q2(score)+Q3+Q4+Q5+Q6(ladder max)
+                    st.info(f"🏆 Knockout Stage: up to {max_pts} Points Total (Q6's max varies by match)")
+                elif round16_plus:
+                    max_pts = 60
+                    st.info(f"🏆 Knockout Stage: {max_pts} Points Total")
+                else:
+                    max_pts = 30
+                    st.info(f"🏆 Knockout Stage: {max_pts} Points Total")
+
+                if odds_data is not None:
+                    # Only run the AI if the GOOGLE_API_KEY is present in secrets
+                    if "GOOGLE_API_KEY" in st.secrets:
+                        with st.spinner("🎤 Crossing to the commentary box for the pre-match scoop..."):
+                            match_facts = compute_match_probabilities(
+                                home_clean,
+                                away_clean,
+                                odds_data.get('Qualify_Home', '?'),
+                                odds_data.get('Qualify_Away', '?'),
+                                str(odds_data.get('Progression_Data', 'No data')),
+                                str(odds_data.get('First_Scorer_Data', 'No data'))
+                            )
+                            narrative = generate_kid_friendly_narrative(match_facts)
+                        # Convert markdown **bold** to real <strong> tags - markdown syntax does NOT get
+                        # re-parsed once it's inside a raw HTML block, so we have to do this conversion
+                        # ourselves before injecting it into the story-card div.
+                        narrative_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", narrative)
+                        # Display it in a styled custom box
+                        st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative_html}<br><br><span style='font-size:0.7em; opacity:0.5;'>⚡ Powered by Groq</span></div>", unsafe_allow_html=True)
+                    else:
+                        st.warning("⚠️ Commentary offline. Missing GOOGLE_API_KEY in Streamlit secrets.")
                 # --------------------------------------
 
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
@@ -990,16 +1086,34 @@ with tab2:
                 q1_first = st.radio("Select Team:", [home_clean, away_clean, "No Goal (0-0)"], index=None, key=f"q1_{m_id}")
                 st.markdown("</div>", unsafe_allow_html=True)
 
+                q2_gap = None
+                q2_home_score = None
+                q2_away_score = None
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
-                st.markdown("#### 📏 What's the goal gap when the final whistle blows?")
-                st.caption("Count the difference in goals after 90 mins + extra time — but NOT penalty shootouts. So if it's 2-1 after extra time, the gap is 1.")
-                if q1_first == "No Goal (0-0)":
-                    q2_gap = "0"
-                    st.info("🔒 You picked No Goal — so your goal gap is automatically locked to **0**! No goals = no difference. If the match ends 0-0 and goes to a penalty shootout, you'll still earn your **10 pts** for the goal gap — it's already locked in for you, no need to pick anything! 🎯")
+                if qf_plus:
+                    st.markdown("#### 🔢 What's the exact score? (20 pts)")
+                    st.caption("Final score after 90 mins + extra time — before any penalty shootout.")
+                    if q1_first == "No Goal (0-0)":
+                        q2_home_score, q2_away_score = 0, 0
+                        st.info("🔒 You picked No Goal — score is automatically locked to **0-0**! Already locked in for you. 🎯")
+                    else:
+                        sc_col1, sc_col2 = st.columns(2)
+                        with sc_col1:
+                            q2_home_score = st.number_input(f"{home_clean} Score", min_value=0, max_value=20, step=1, value=0, key=f"q2home_{m_id}")
+                        with sc_col2:
+                            q2_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=0, key=f"q2away_{m_id}")
+                        if q2_home_score == 0 and q2_away_score == 0:
+                            st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 else:
-                    q2_gap = st.radio("Select Goal Gap:", ["0", "1", "2", "3+"], index=None, key=f"q2_{m_id}")
-                    if q2_gap == "0":
-                        st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
+                    st.markdown("#### 📏 What's the goal gap when the final whistle blows?")
+                    st.caption("Count the difference in goals after 90 mins + extra time — but NOT penalty shootouts. So if it's 2-1 after extra time, the gap is 1.")
+                    if q1_first == "No Goal (0-0)":
+                        q2_gap = "0"
+                        st.info("🔒 You picked No Goal — so your goal gap is automatically locked to **0**! No goals = no difference. If the match ends 0-0 and goes to a penalty shootout, you'll still earn your **10 pts** for the goal gap — it's already locked in for you, no need to pick anything! 🎯")
+                    else:
+                        q2_gap = st.radio("Select Goal Gap:", ["0", "1", "2", "3+"], index=None, key=f"q2_{m_id}")
+                        if q2_gap == "0":
+                            st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
@@ -1011,12 +1125,14 @@ with tab2:
                 q5_method = None
                 if round16_plus:
                     st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
-                    st.markdown("#### ⏱️ What time does the 1st goal go in? (20 pts)")
+                    q4_points_label = "10 pts" if qf_plus else "20 pts"
+                    st.markdown(f"#### ⏱️ What time does the 1st goal go in? ({q4_points_label})")
                     if q1_first == "No Goal (0-0)":
                         q4_time = "No Goal"
                         st.info("🔒 You picked No Goal — Time of 1st Goal is automatically locked to **No Goal**.")
                     else:
-                        q4_time = st.selectbox("Select time bracket:", ["Select bracket..."] + TIME_BRACKET_OPTIONS, key=f"q4_{m_id}")
+                        bracket_options = QF_TIME_BRACKET_OPTIONS if qf_plus else TIME_BRACKET_OPTIONS
+                        q4_time = st.selectbox("Select time bracket:", ["Select bracket..."] + bracket_options, key=f"q4_{m_id}")
                         if q4_time == "Select bracket...":
                             q4_time = None
                     st.markdown("</div>", unsafe_allow_html=True)
@@ -1030,18 +1146,65 @@ with tab2:
                         q5_method = st.radio("Select method:", METHOD_OPTIONS, index=None, key=f"q5_{m_id}")
                     st.markdown("</div>", unsafe_allow_html=True)
 
-                required_answered = (q1_first and q2_gap and q3_adv) if not round16_plus else (q1_first and q2_gap and q3_adv and q4_time and q5_method)
+                q6_pick = None
+                if qf_plus:
+                    st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
+                    st.markdown("#### 🎯🔥 Who scores the 1st goal? (higher risk = higher reward!)")
+                    if not scorer_ladder:
+                        st.warning("⚠️ No scorer odds found for this match — check First_Scorer_Data in Match_Odds_Feed.")
+                    elif q1_first == "No Goal (0-0)":
+                        q6_pick = "No Goal"
+                        st.info("🔒 You picked No Goal — automatically locked to **No Goal**.")
+                    elif q1_first is None:
+                        st.caption("👆 Answer 'Who scores first?' above to unlock this question.")
+                    else:
+                        team_for_q6 = home_clean if q1_first == home_clean else away_clean
+                        team_players = [e for e in scorer_ladder if e["country"] == team_for_q6]
+                        catchall_label = f"🤷 {Q6_CATCHALL_LABEL} — {Q6_CATCHALL_POINTS} pts"
+                        label_to_entry = {}
+                        option_labels = ["Select player..."]
+                        for e in team_players:
+                            label = f"{temp_emoji(e['rank_fraction'])} {e['name']} ({team_for_q6}) — {e['points']} pts"
+                            option_labels.append(label)
+                            label_to_entry[label] = e
+                        option_labels.append(catchall_label)
+
+                        picked_label = st.selectbox("Pick a player:", option_labels, key=f"q6_{m_id}")
+                        if picked_label == "Select player...":
+                            q6_pick = None
+                        elif picked_label == catchall_label:
+                            q6_pick = Q6_CATCHALL_LABEL
+                            st.caption("Betting on the field! 🎲")
+                        else:
+                            entry = label_to_entry[picked_label]
+                            q6_pick = entry["name"]
+                            photo = get_player_photo(entry["name"])
+                            if photo:
+                                st.image(photo, width=100, caption=f"{entry['name']} ({team_for_q6})")
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                if qf_plus:
+                    num_questions_label = 6
+                    required_answered = bool(
+                        q1_first and (q2_home_score is not None and q2_away_score is not None)
+                        and q3_adv and q4_time and q5_method and q6_pick
+                    )
+                elif round16_plus:
+                    num_questions_label = 5
+                    required_answered = bool(q1_first and q2_gap and q3_adv and q4_time and q5_method)
+                else:
+                    num_questions_label = 3
+                    required_answered = bool(q1_first and q2_gap and q3_adv)
 
                 if st.button("Lock Prediction In"):
                     if is_locked:
                         st.error("This match has already kicked off! Changing predictions is locked.")
                     elif not required_answered:
-                        st.warning(f"⚠️ Please answer all {5 if round16_plus else 3} questions before submitting!")
+                        st.warning(f"⚠️ Please answer all {num_questions_label} questions before submitting!")
                     else:
                         try:
                             headers = get_headers(target_ws, target_ws.title)
                             first_col_idx = headers.index(f"{user}_FirstScorer") + 1
-                            gap_col_idx = headers.index(f"{user}_GoalGap") + 1
                             qual_col_idx = headers.index(f"{user}_Qualifier") + 1
                             sheet_row_num = int(m_idx) + 2
                             
@@ -1049,14 +1212,26 @@ with tab2:
                             sheet_adv_val = m_row['Home_Team'] if q3_adv == home_clean else m_row['Away_Team']
 
                             target_ws.update_cell(sheet_row_num, first_col_idx, sheet_first_val)
-                            target_ws.update_cell(sheet_row_num, gap_col_idx, q2_gap)
                             target_ws.update_cell(sheet_row_num, qual_col_idx, sheet_adv_val)
+
+                            if qf_plus:
+                                home_score_idx = headers.index(f"{user}_HomeScore") + 1
+                                away_score_idx = headers.index(f"{user}_AwayScore") + 1
+                                target_ws.update_cell(sheet_row_num, home_score_idx, q2_home_score)
+                                target_ws.update_cell(sheet_row_num, away_score_idx, q2_away_score)
+                            else:
+                                gap_col_idx = headers.index(f"{user}_GoalGap") + 1
+                                target_ws.update_cell(sheet_row_num, gap_col_idx, q2_gap)
 
                             if round16_plus:
                                 time_col_idx = headers.index(f"{user}_TimeOfFirstGoal") + 1
                                 method_col_idx = headers.index(f"{user}_MethodOfFirstGoal") + 1
                                 target_ws.update_cell(sheet_row_num, time_col_idx, q4_time)
                                 target_ws.update_cell(sheet_row_num, method_col_idx, q5_method)
+
+                            if qf_plus:
+                                scorer_col_idx = headers.index(f"{user}_NominatedScorer") + 1
+                                target_ws.update_cell(sheet_row_num, scorer_col_idx, q6_pick)
                             
                             st.cache_data.clear()
                             st.toast("✅ Prediction saved!", icon="✅")
@@ -1147,13 +1322,26 @@ with tab3:
             else:
                 st.markdown("### 1. Enter Actual Match Result (Knockout Stage)")
                 round16_plus_admin = is_round16_plus(selected_id)
-                
+                qf_plus_admin = is_qf_plus(selected_id)
+
                 act_first_selection = st.radio("1. Who scored first?", [home_clean, away_clean, "No Goal (0-0)"])
-                act_gap_selection = st.radio("2. What was the goal gap at full time (90 min + ET, before pens)?", ["0", "1", "2", "3+"])
-                act_adv_selection = st.radio("3. Who Advanced?", [home_clean, away_clean])
 
                 actual_first_val = match_row['Home_Team'] if act_first_selection == home_clean else (match_row['Away_Team'] if act_first_selection == away_clean else "No Goal")
-                actual_gap_val = act_gap_selection
+                actual_qual_val = None
+
+                if qf_plus_admin:
+                    st.markdown("##### 2. Exact final score (before penalties)")
+                    ac_col1, ac_col2 = st.columns(2)
+                    with ac_col1:
+                        actual_home_score = st.number_input(f"{home_clean} Score", min_value=0, max_value=20, step=1, value=0, key="admin_home_score")
+                    with ac_col2:
+                        actual_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=0, key="admin_away_score")
+                    actual_gap_val = None
+                else:
+                    actual_gap_val = st.radio("2. What was the goal gap at full time (90 min + ET, before pens)?", ["0", "1", "2", "3+"])
+                    actual_home_score = actual_away_score = None
+
+                act_adv_selection = st.radio("3. Who Advanced?", [home_clean, away_clean])
                 actual_qual_val = match_row['Home_Team'] if act_adv_selection == home_clean else match_row['Away_Team']
 
                 actual_time_val = "No Goal"
@@ -1161,32 +1349,93 @@ with tab3:
                 if round16_plus_admin:
                     if act_first_selection == "No Goal (0-0)":
                         st.info("🔒 No Goal selected — Time & Method of 1st goal auto-locked to 'No Goal'.")
+                    elif qf_plus_admin:
+                        actual_time_val = st.radio("4. What time did the 1st goal go in?", QF_TIME_BRACKET_OPTIONS)
+                        actual_method_val = st.radio("5. How did the 1st goal happen?", METHOD_OPTIONS)
                     else:
                         act_minute = st.number_input("4. Actual minute of the 1st goal (enter 45 for 1st-half injury time, 90 for 2nd-half injury time):", min_value=0, max_value=120, step=1, value=0)
                         actual_time_val = map_minute_to_bracket(act_minute)
                         st.caption(f"→ Maps to bracket: **{actual_time_val}**")
                         actual_method_val = st.radio("5. How did the 1st goal happen?", METHOD_OPTIONS)
 
+                # Q6: actual 1st goalscorer, from the same First_Scorer_Data ladder shown to participants
+                actual_q6_val = "No Goal"
+                scorer_ladder_admin = []
+                if qf_plus_admin:
+                    st.markdown("##### 6. Who actually scored the 1st goal?")
+                    odds_row_admin = odds_df[odds_df['Match_ID'].astype(str) == str(selected_id)] if not odds_df.empty else pd.DataFrame()
+                    if not odds_row_admin.empty:
+                        scorer_ladder_admin = parse_scorer_ladder(str(odds_row_admin.iloc[0].get('First_Scorer_Data', '')))
+
+                    if act_first_selection == "No Goal (0-0)":
+                        actual_q6_val = "No Goal"
+                        st.info("🔒 No Goal selected — Q6 auto-locked to 'No Goal'.")
+                    elif not scorer_ladder_admin:
+                        st.warning("⚠️ No scorer odds found for this match — check First_Scorer_Data in Match_Odds_Feed.")
+                    else:
+                        team_for_q6_admin = home_clean if act_first_selection == home_clean else away_clean
+                        team_players_admin = [e for e in scorer_ladder_admin if e["country"] == team_for_q6_admin]
+                        catchall_label_admin = f"{Q6_CATCHALL_LABEL} ({Q6_CATCHALL_POINTS} pts)"
+                        label_to_entry_admin = {}
+                        admin_option_labels = []
+                        for e in team_players_admin:
+                            label = f"{e['name']} ({team_for_q6_admin}) — {e['points']} pts"
+                            admin_option_labels.append(label)
+                            label_to_entry_admin[label] = e
+                        admin_option_labels.append(catchall_label_admin)
+                        picked_admin_label = st.radio("Actual 1st goalscorer:", admin_option_labels, key="admin_q6")
+                        if picked_admin_label == catchall_label_admin:
+                            actual_q6_val = Q6_CATCHALL_LABEL
+                        else:
+                            actual_q6_val = label_to_entry_admin[picked_admin_label]["name"]
+
                 st.markdown("### Points Preview:")
-                max_pts_admin = 60 if round16_plus_admin else 30
+                if qf_plus_admin:
+                    q6_max_pts_admin = max([e['points'] for e in scorer_ladder_admin], default=Q6_CATCHALL_POINTS)
+                    max_pts_admin = 10 + 20 + 10 + 10 + 10 + q6_max_pts_admin
+                else:
+                    max_pts_admin = 60 if round16_plus_admin else 30
+
+                # Build a name -> points lookup for this match's Q6 ladder, used to award
+                # each participant the points THEIR picked player was actually worth.
+                q6_points_lookup = {e["name"]: e["points"] for e in scorer_ladder_admin} if qf_plus_admin else {}
+
                 for p in participants:
                     p_first = str(match_row.get(f'{p}_FirstScorer', "")).strip()
-                    p_gap = str(match_row.get(f'{p}_GoalGap', "")).strip()
                     p_qual = str(match_row.get(f'{p}_Qualifier', "")).strip()
-                    
+
                     earned = 0
                     if p_first.lower() == str(actual_first_val).lower() and p_first != "": earned += 10
-                    if p_gap == str(actual_gap_val) and p_gap != "": earned += 10
                     if p_qual.lower() == str(actual_qual_val).lower() and p_qual != "": earned += 10
 
-                    preview_line = f"First: {clean_country_name(p_first)} | Gap: {p_gap} | Adv: {clean_country_name(p_qual)}"
+                    if qf_plus_admin:
+                        p_home_score = str(match_row.get(f'{p}_HomeScore', "")).strip()
+                        p_away_score = str(match_row.get(f'{p}_AwayScore', "")).strip()
+                        if (p_home_score != "" and p_away_score != ""
+                                and str(actual_home_score) == p_home_score and str(actual_away_score) == p_away_score):
+                            earned += 20
+                        preview_line = f"First: {clean_country_name(p_first)} | Score: {p_home_score or '—'}-{p_away_score or '—'} | Adv: {clean_country_name(p_qual)}"
+                    else:
+                        p_gap = str(match_row.get(f'{p}_GoalGap', "")).strip()
+                        if p_gap == str(actual_gap_val) and p_gap != "": earned += 10
+                        preview_line = f"First: {clean_country_name(p_first)} | Gap: {p_gap} | Adv: {clean_country_name(p_qual)}"
 
                     if round16_plus_admin:
                         p_time = str(match_row.get(f'{p}_TimeOfFirstGoal', "")).strip()
                         p_method = str(match_row.get(f'{p}_MethodOfFirstGoal', "")).strip()
-                        if p_time == actual_time_val and p_time != "": earned += 20
+                        time_pts = 10 if qf_plus_admin else 20
+                        if p_time == actual_time_val and p_time != "": earned += time_pts
                         if p_method == actual_method_val and p_method != "": earned += 10
                         preview_line += f" | Time: {p_time or '—'} | Method: {p_method or '—'}"
+
+                    if qf_plus_admin:
+                        p_q6 = str(match_row.get(f'{p}_NominatedScorer', "")).strip()
+                        if p_q6 != "" and p_q6 == actual_q6_val:
+                            if p_q6 == Q6_CATCHALL_LABEL or p_q6 == "No Goal":
+                                earned += Q6_CATCHALL_POINTS
+                            else:
+                                earned += q6_points_lookup.get(p_q6, 0)
+                        preview_line += f" | 1st Scorer: {p_q6 or '—'}"
 
                     calculated_points_delta[p] = earned
                     
@@ -1223,8 +1472,17 @@ with tab3:
                         elif stage == "Knockout":
                             if "Qualifying_Team" in headers:
                                 target_ws.update_cell(sheet_row_num, headers.index("Qualifying_Team") + 1, actual_qual_val)
-                            if "Actual_GoalGap" in headers:
+
+                            if is_qf_plus(selected_id):
+                                if "Actual_HomeScore" in headers:
+                                    target_ws.update_cell(sheet_row_num, headers.index("Actual_HomeScore") + 1, actual_home_score)
+                                if "Actual_AwayScore" in headers:
+                                    target_ws.update_cell(sheet_row_num, headers.index("Actual_AwayScore") + 1, actual_away_score)
+                                if "Actual_NominatedScorer" in headers:
+                                    target_ws.update_cell(sheet_row_num, headers.index("Actual_NominatedScorer") + 1, actual_q6_val)
+                            elif "Actual_GoalGap" in headers:
                                 target_ws.update_cell(sheet_row_num, headers.index("Actual_GoalGap") + 1, actual_gap_val)
+
                             if is_round16_plus(selected_id):
                                 if "Actual_TimeOfFirstGoal" in headers:
                                     target_ws.update_cell(sheet_row_num, headers.index("Actual_TimeOfFirstGoal") + 1, actual_time_val)
