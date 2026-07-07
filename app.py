@@ -572,12 +572,22 @@ def is_once_off_locked():
 # ==========================================
 # QUARTER FINAL+ CONSTANTS (Match_ID >= 97)
 # Exact score replaces Goal Gap, simplified 4-bracket time (10pts, was 20),
-# and a new "who scores 1st" player ladder question (Q6).
+# "Team Advances" is removed (exact score already determines the winner), and
+# Q5 is an "Anytime Scorer" player ladder question (scores in Normal Time or
+# Extra Time only - penalty shootout goals don't count). Still reads from
+# Match_Odds_Feed.First_Scorer_Data even though it's no longer strictly a
+# "first scorer" market.
 # ==========================================
 QF_MATCH_ID_THRESHOLD = 97
 QF_TIME_BRACKET_OPTIONS = ["1st Half NT", "2nd Half NT", "1st Half ET", "2nd Half ET"]
-Q6_CATCHALL_LABEL = "None of these players"
-Q6_CATCHALL_POINTS = 10
+Q6_NOGOAL_LABEL = "No Goal"
+Q6_CATCHALL_POINTS = 10  # points for correctly calling "No Goal" (no anytime scorer)
+
+# --- DEV OVERRIDE: force specific matches into the prediction window early ---
+# Temporary way to open a match for predictions before its normal rolling
+# window kicks in, without touching kickoff times. Remove/empty this list
+# once the normal window naturally reaches these matches.
+FORCE_OPEN_MATCHES = ["97"]
 
 def is_qf_plus(match_id):
     try:
@@ -589,8 +599,12 @@ def parse_scorer_ladder(first_scorer_str):
     """Parse 'Name (Country) Odds, Name (Country) Odds, ...' from Match_Odds_Feed's
     First_Scorer_Data. Returns entries ranked ascending by odds (favourite first),
     each tagged with its points on the risk/reward ladder: 5, 8, 11, 14... (+3 per
-    rank) - this naturally scales to however many named players are actually given,
-    rather than assuming exactly 6."""
+    UNIQUE odds value) - this naturally scales to however many named players are
+    actually given, rather than assuming exactly 6.
+
+    Players sharing identical odds get identical points (and identical emoji/risk
+    level) - the ladder only steps up when the odds themselves increase, so two
+    equally-priced players are equally risky/rewarding picks."""
     entries = []
     for chunk in str(first_scorer_str).split(","):
         chunk = chunk.strip()
@@ -601,10 +615,15 @@ def parse_scorer_ladder(first_scorer_str):
             name, country, odds = m.group(1).strip(), m.group(2).strip(), float(m.group(3))
             entries.append({"name": name, "country": clean_country_name(country), "odds": odds})
     entries.sort(key=lambda e: e["odds"])  # ascending odds = shortest price = favourite first
-    n = len(entries)
-    for i, e in enumerate(entries):
-        e["points"] = 5 + 3 * i
-        e["rank_fraction"] = (i / (n - 1)) if n > 1 else 0
+
+    unique_odds = sorted(set(e["odds"] for e in entries))
+    n_unique = len(unique_odds)
+    odds_to_points = {o: 5 + 3 * i for i, o in enumerate(unique_odds)}
+    odds_to_fraction = {o: (i / (n_unique - 1) if n_unique > 1 else 0) for i, o in enumerate(unique_odds)}
+
+    for e in entries:
+        e["points"] = odds_to_points[e["odds"]]
+        e["rank_fraction"] = odds_to_fraction[e["odds"]]
     return entries
 
 def temp_emoji(fraction):
@@ -715,20 +734,20 @@ with tab1:
                         })
                     else:
                         p_first = str(arow.get(f'{p}_FirstScorer', "")).strip()
-                        p_qual = str(arow.get(f'{p}_Qualifier', "")).strip()
                         p_row = {
                             "Player": p,
                             "⚽ First Scorer": clean_country_name(p_first) or "—",
-                            "🏆 Advances": clean_country_name(p_qual) or "—",
                         }
                         if is_qf_plus(a_mid):
                             p_home_sc = str(arow.get(f'{p}_HomeScore', "")).strip()
                             p_away_sc = str(arow.get(f'{p}_AwayScore', "")).strip()
                             p_row["🔢 Score"] = f"{p_home_sc}-{p_away_sc}" if p_home_sc != "" and p_away_sc != "" else "—"
                             p_nominated = str(arow.get(f'{p}_NominatedScorer', "")).strip()
-                            p_row["👤 Scorer Pick"] = p_nominated or "—"
+                            p_row["🎯 Anytime Scorer"] = p_nominated or "—"
                         else:
+                            p_qual = str(arow.get(f'{p}_Qualifier', "")).strip()
                             p_gap = str(arow.get(f'{p}_GoalGap', "")).strip()
+                            p_row["🏆 Advances"] = clean_country_name(p_qual) or "—"
                             p_row["📏 Goal Gap"] = p_gap or "—"
                         if is_round16_plus(a_mid):
                             p_time = str(arow.get(f'{p}_TimeOfFirstGoal', "")).strip()
@@ -870,7 +889,6 @@ with tab2:
         for _, row in active_ko.iterrows():
             m_id = row['Match_ID']
             first_scorer = str(row.get(f'{user}_FirstScorer', "")).strip()
-            qualifier = str(row.get(f'{user}_Qualifier', "")).strip()
 
             ko_row = {
                 "Match ID": m_id,
@@ -880,20 +898,22 @@ with tab2:
                 "🏳️ Away": get_flag_url(row['Away_Team']),
                 "Kickoff (AEST)": row['Kickoff_AEST'].strftime('%a, %d %b, %I:%M %p'),
                 "⚽ First Scorer": clean_country_name(first_scorer) if first_scorer else "—",
-                "🏆 Advances": clean_country_name(qualifier) if qualifier else "—",
             }
             if is_qf_plus(m_id):
                 home_sc = str(row.get(f'{user}_HomeScore', "")).strip()
                 away_sc = str(row.get(f'{user}_AwayScore', "")).strip()
+                ko_row["🏆 Advances"] = "N/A"
                 ko_row["📏 Goal Gap"] = "N/A"
                 ko_row["🔢 Score"] = f"{home_sc}-{away_sc}" if home_sc != "" and away_sc != "" else "—"
                 nominated = str(row.get(f'{user}_NominatedScorer', "")).strip()
-                ko_row["👤 Scorer Pick"] = nominated or "—"
+                ko_row["🎯 Anytime Scorer"] = nominated or "—"
             else:
+                qualifier = str(row.get(f'{user}_Qualifier', "")).strip()
                 goal_gap = str(row.get(f'{user}_GoalGap', "")).strip()
+                ko_row["🏆 Advances"] = clean_country_name(qualifier) if qualifier else "—"
                 ko_row["📏 Goal Gap"] = goal_gap or "—"
                 ko_row["🔢 Score"] = "N/A"
-                ko_row["👤 Scorer Pick"] = "N/A"
+                ko_row["🎯 Anytime Scorer"] = "N/A"
 
             if is_round16_plus(m_id):
                 time_pick = str(row.get(f'{user}_TimeOfFirstGoal', "")).strip()
@@ -941,6 +961,13 @@ with tab2:
                 cond_today = (combined_schedule['Kickoff_Date'] == day_d) & (combined_schedule['Kickoff_AEST'] > current_time)
                 cond_future = combined_schedule['Kickoff_Date'].isin([day_d1, day_d2])
                 open_matches = combined_schedule[cond_today | cond_future].copy()
+
+            # DEV OVERRIDE: force specific matches into the list even if their normal
+            # rolling window hasn't opened yet (kickoff times themselves are untouched).
+            if FORCE_OPEN_MATCHES:
+                forced_rows = combined_schedule[combined_schedule['Match_ID'].isin(FORCE_OPEN_MATCHES)]
+                if not forced_rows.empty:
+                    open_matches = pd.concat([open_matches, forced_rows], ignore_index=True).drop_duplicates(subset='Match_ID')
 
         if open_matches.empty:
             st.info("No matches scheduled for this specific rolling window are open right now.")
@@ -1049,8 +1076,8 @@ with tab2:
 
                 if qf_plus:
                     q6_max_pts = max([e['points'] for e in scorer_ladder], default=Q6_CATCHALL_POINTS)
-                    max_pts = 10 + 20 + 10 + 10 + 10 + q6_max_pts  # Q1+Q2(score)+Q3+Q4+Q5+Q6(ladder max)
-                    st.info(f"🏆 Knockout Stage: up to {max_pts} Points Total (Q6's max varies by match)")
+                    max_pts = 10 + 20 + 10 + 10 + q6_max_pts  # Q1(first scorer team)+Q2(score)+Q3(time)+Q4(method)+Q5(anytime scorer, ladder max)
+                    st.info(f"🏆 Knockout Stage: up to {max_pts} Points Total (Anytime Scorer's max varies by match)")
                 elif round16_plus:
                     max_pts = 60
                     st.info(f"🏆 Knockout Stage: {max_pts} Points Total")
@@ -1116,10 +1143,12 @@ with tab2:
                             st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-                st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
-                st.markdown("#### 🏆 Which team advances to the next round?")
-                q3_adv = st.radio("Select Winner:", [home_clean, away_clean], index=None, key=f"q3_{m_id}")
-                st.markdown("</div>", unsafe_allow_html=True)
+                q3_adv = None
+                if not qf_plus:
+                    st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
+                    st.markdown("#### 🏆 Which team advances to the next round?")
+                    q3_adv = st.radio("Select Winner:", [home_clean, away_clean], index=None, key=f"q3_{m_id}")
+                    st.markdown("</div>", unsafe_allow_html=True)
 
                 q4_time = None
                 q5_method = None
@@ -1149,45 +1178,37 @@ with tab2:
                 q6_pick = None
                 if qf_plus:
                     st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
-                    st.markdown("#### 🎯🔥 Who scores the 1st goal? (higher risk = higher reward!)")
+                    st.markdown("#### 🎯🔥 Who scores anytime? (higher risk = higher reward!)")
+                    st.caption("Any goal in Normal Time or Extra Time counts — penalty shootout goals don't count.")
                     if not scorer_ladder:
                         st.warning("⚠️ No scorer odds found for this match — check First_Scorer_Data in Match_Odds_Feed.")
-                    elif q1_first == "No Goal (0-0)":
+                    elif q2_home_score == 0 and q2_away_score == 0:
                         q6_pick = "No Goal"
-                        st.info("🔒 You picked No Goal — automatically locked to **No Goal**.")
-                    elif q1_first is None:
-                        st.caption("👆 Answer 'Who scores first?' above to unlock this question.")
+                        st.info("🔒 You predicted 0-0 — automatically locked to **No Goal**.")
                     else:
-                        team_for_q6 = home_clean if q1_first == home_clean else away_clean
-                        team_players = [e for e in scorer_ladder if e["country"] == team_for_q6]
-                        catchall_label = f"🤷 {Q6_CATCHALL_LABEL} — {Q6_CATCHALL_POINTS} pts"
                         label_to_entry = {}
                         option_labels = ["Select player..."]
-                        for e in team_players:
-                            label = f"{temp_emoji(e['rank_fraction'])} {e['name']} ({team_for_q6}) — {e['points']} pts"
+                        for e in scorer_ladder:
+                            label = f"{temp_emoji(e['rank_fraction'])} {e['name']} ({e['country']}) — {e['points']} pts"
                             option_labels.append(label)
                             label_to_entry[label] = e
-                        option_labels.append(catchall_label)
 
                         picked_label = st.selectbox("Pick a player:", option_labels, key=f"q6_{m_id}")
                         if picked_label == "Select player...":
                             q6_pick = None
-                        elif picked_label == catchall_label:
-                            q6_pick = Q6_CATCHALL_LABEL
-                            st.caption("Betting on the field! 🎲")
                         else:
                             entry = label_to_entry[picked_label]
                             q6_pick = entry["name"]
                             photo = get_player_photo(entry["name"])
                             if photo:
-                                st.image(photo, width=100, caption=f"{entry['name']} ({team_for_q6})")
+                                st.image(photo, width=100, caption=f"{entry['name']} ({entry['country']})")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                 if qf_plus:
-                    num_questions_label = 6
+                    num_questions_label = 5
                     required_answered = bool(
                         q1_first and (q2_home_score is not None and q2_away_score is not None)
-                        and q3_adv and q4_time and q5_method and q6_pick
+                        and q4_time and q5_method and q6_pick
                     )
                 elif round16_plus:
                     num_questions_label = 5
@@ -1205,14 +1226,15 @@ with tab2:
                         try:
                             headers = get_headers(target_ws, target_ws.title)
                             first_col_idx = headers.index(f"{user}_FirstScorer") + 1
-                            qual_col_idx = headers.index(f"{user}_Qualifier") + 1
                             sheet_row_num = int(m_idx) + 2
                             
                             sheet_first_val = m_row['Home_Team'] if q1_first == home_clean else (m_row['Away_Team'] if q1_first == away_clean else "No Goal")
-                            sheet_adv_val = m_row['Home_Team'] if q3_adv == home_clean else m_row['Away_Team']
-
                             target_ws.update_cell(sheet_row_num, first_col_idx, sheet_first_val)
-                            target_ws.update_cell(sheet_row_num, qual_col_idx, sheet_adv_val)
+
+                            if not qf_plus:
+                                qual_col_idx = headers.index(f"{user}_Qualifier") + 1
+                                sheet_adv_val = m_row['Home_Team'] if q3_adv == home_clean else m_row['Away_Team']
+                                target_ws.update_cell(sheet_row_num, qual_col_idx, sheet_adv_val)
 
                             if qf_plus:
                                 home_score_idx = headers.index(f"{user}_HomeScore") + 1
@@ -1337,76 +1359,71 @@ with tab3:
                     with ac_col2:
                         actual_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=0, key="admin_away_score")
                     actual_gap_val = None
+                    # No "Team Advances" question for QF+ — exact score already determines the winner.
+                    actual_qual_val = None
                 else:
                     actual_gap_val = st.radio("2. What was the goal gap at full time (90 min + ET, before pens)?", ["0", "1", "2", "3+"])
                     actual_home_score = actual_away_score = None
 
-                act_adv_selection = st.radio("3. Who Advanced?", [home_clean, away_clean])
-                actual_qual_val = match_row['Home_Team'] if act_adv_selection == home_clean else match_row['Away_Team']
+                    act_adv_selection = st.radio("3. Who Advanced?", [home_clean, away_clean])
+                    actual_qual_val = match_row['Home_Team'] if act_adv_selection == home_clean else match_row['Away_Team']
 
                 actual_time_val = "No Goal"
                 actual_method_val = "No Goal"
                 if round16_plus_admin:
+                    time_method_prefix = "3" if qf_plus_admin else "4"
                     if act_first_selection == "No Goal (0-0)":
                         st.info("🔒 No Goal selected — Time & Method of 1st goal auto-locked to 'No Goal'.")
                     elif qf_plus_admin:
-                        actual_time_val = st.radio("4. What time did the 1st goal go in?", QF_TIME_BRACKET_OPTIONS)
-                        actual_method_val = st.radio("5. How did the 1st goal happen?", METHOD_OPTIONS)
+                        actual_time_val = st.radio(f"{time_method_prefix}. What time did the 1st goal go in?", QF_TIME_BRACKET_OPTIONS)
+                        actual_method_val = st.radio(f"{int(time_method_prefix) + 1}. How did the 1st goal happen?", METHOD_OPTIONS)
                     else:
-                        act_minute = st.number_input("4. Actual minute of the 1st goal (enter 45 for 1st-half injury time, 90 for 2nd-half injury time):", min_value=0, max_value=120, step=1, value=0)
+                        act_minute = st.number_input(f"{time_method_prefix}. Actual minute of the 1st goal (enter 45 for 1st-half injury time, 90 for 2nd-half injury time):", min_value=0, max_value=120, step=1, value=0)
                         actual_time_val = map_minute_to_bracket(act_minute)
                         st.caption(f"→ Maps to bracket: **{actual_time_val}**")
-                        actual_method_val = st.radio("5. How did the 1st goal happen?", METHOD_OPTIONS)
+                        actual_method_val = st.radio(f"{int(time_method_prefix) + 1}. How did the 1st goal happen?", METHOD_OPTIONS)
 
-                # Q6: actual 1st goalscorer, from the same First_Scorer_Data ladder shown to participants
-                actual_q6_val = "No Goal"
+                # Anytime Scorer (QF+ only): admin selects EVERY player who scored during
+                # Normal Time or Extra Time (penalty shootout goals don't count). Multiselect
+                # since more than one player can score across the match.
+                actual_q6_selected = []
                 scorer_ladder_admin = []
                 if qf_plus_admin:
-                    st.markdown("##### 6. Who actually scored the 1st goal?")
+                    st.markdown("##### 5. Who scored anytime? (Normal Time + Extra Time only — select every scorer)")
                     odds_row_admin = odds_df[odds_df['Match_ID'].astype(str) == str(selected_id)] if not odds_df.empty else pd.DataFrame()
                     if not odds_row_admin.empty:
                         scorer_ladder_admin = parse_scorer_ladder(str(odds_row_admin.iloc[0].get('First_Scorer_Data', '')))
 
-                    if act_first_selection == "No Goal (0-0)":
-                        actual_q6_val = "No Goal"
-                        st.info("🔒 No Goal selected — Q6 auto-locked to 'No Goal'.")
+                    if actual_home_score == 0 and actual_away_score == 0:
+                        st.info("🔒 0-0 result — no anytime scorers possible.")
                     elif not scorer_ladder_admin:
                         st.warning("⚠️ No scorer odds found for this match — check First_Scorer_Data in Match_Odds_Feed.")
                     else:
-                        team_for_q6_admin = home_clean if act_first_selection == home_clean else away_clean
-                        team_players_admin = [e for e in scorer_ladder_admin if e["country"] == team_for_q6_admin]
-                        catchall_label_admin = f"{Q6_CATCHALL_LABEL} ({Q6_CATCHALL_POINTS} pts)"
                         label_to_entry_admin = {}
                         admin_option_labels = []
-                        for e in team_players_admin:
-                            label = f"{e['name']} ({team_for_q6_admin}) — {e['points']} pts"
+                        for e in scorer_ladder_admin:
+                            label = f"{e['name']} ({e['country']}) — {e['points']} pts"
                             admin_option_labels.append(label)
                             label_to_entry_admin[label] = e
-                        admin_option_labels.append(catchall_label_admin)
-                        picked_admin_label = st.radio("Actual 1st goalscorer:", admin_option_labels, key="admin_q6")
-                        if picked_admin_label == catchall_label_admin:
-                            actual_q6_val = Q6_CATCHALL_LABEL
-                        else:
-                            actual_q6_val = label_to_entry_admin[picked_admin_label]["name"]
+                        picked_admin_labels = st.multiselect("Select every player who scored (NT + ET):", admin_option_labels, key="admin_q6_multi")
+                        actual_q6_selected = [label_to_entry_admin[lbl]["name"] for lbl in picked_admin_labels]
 
                 st.markdown("### Points Preview:")
                 if qf_plus_admin:
                     q6_max_pts_admin = max([e['points'] for e in scorer_ladder_admin], default=Q6_CATCHALL_POINTS)
-                    max_pts_admin = 10 + 20 + 10 + 10 + 10 + q6_max_pts_admin
+                    max_pts_admin = 10 + 20 + 10 + 10 + q6_max_pts_admin
                 else:
                     max_pts_admin = 60 if round16_plus_admin else 30
 
-                # Build a name -> points lookup for this match's Q6 ladder, used to award
-                # each participant the points THEIR picked player was actually worth.
+                # Build a name -> points lookup for this match's Anytime Scorer ladder, used
+                # to award each participant the points THEIR picked player was actually worth.
                 q6_points_lookup = {e["name"]: e["points"] for e in scorer_ladder_admin} if qf_plus_admin else {}
 
                 for p in participants:
                     p_first = str(match_row.get(f'{p}_FirstScorer', "")).strip()
-                    p_qual = str(match_row.get(f'{p}_Qualifier', "")).strip()
 
                     earned = 0
                     if p_first.lower() == str(actual_first_val).lower() and p_first != "": earned += 10
-                    if p_qual.lower() == str(actual_qual_val).lower() and p_qual != "": earned += 10
 
                     if qf_plus_admin:
                         p_home_score = str(match_row.get(f'{p}_HomeScore', "")).strip()
@@ -1414,8 +1431,10 @@ with tab3:
                         if (p_home_score != "" and p_away_score != ""
                                 and str(actual_home_score) == p_home_score and str(actual_away_score) == p_away_score):
                             earned += 20
-                        preview_line = f"First: {clean_country_name(p_first)} | Score: {p_home_score or '—'}-{p_away_score or '—'} | Adv: {clean_country_name(p_qual)}"
+                        preview_line = f"First: {clean_country_name(p_first)} | Score: {p_home_score or '—'}-{p_away_score or '—'}"
                     else:
+                        p_qual = str(match_row.get(f'{p}_Qualifier', "")).strip()
+                        if p_qual.lower() == str(actual_qual_val).lower() and p_qual != "": earned += 10
                         p_gap = str(match_row.get(f'{p}_GoalGap', "")).strip()
                         if p_gap == str(actual_gap_val) and p_gap != "": earned += 10
                         preview_line = f"First: {clean_country_name(p_first)} | Gap: {p_gap} | Adv: {clean_country_name(p_qual)}"
@@ -1430,12 +1449,11 @@ with tab3:
 
                     if qf_plus_admin:
                         p_q6 = str(match_row.get(f'{p}_NominatedScorer', "")).strip()
-                        if p_q6 != "" and p_q6 == actual_q6_val:
-                            if p_q6 == Q6_CATCHALL_LABEL or p_q6 == "No Goal":
-                                earned += Q6_CATCHALL_POINTS
-                            else:
-                                earned += q6_points_lookup.get(p_q6, 0)
-                        preview_line += f" | 1st Scorer: {p_q6 or '—'}"
+                        if p_q6 == Q6_NOGOAL_LABEL:
+                            if not actual_q6_selected: earned += Q6_CATCHALL_POINTS
+                        elif p_q6 != "" and p_q6 in actual_q6_selected:
+                            earned += q6_points_lookup.get(p_q6, 0)
+                        preview_line += f" | Anytime Scorer: {p_q6 or '—'}"
 
                     calculated_points_delta[p] = earned
                     
@@ -1470,16 +1488,24 @@ with tab3:
                         if stage == "Group" and "Actual_Score" in headers:
                             target_ws.update_cell(sheet_row_num, headers.index("Actual_Score") + 1, actual_score_str)
                         elif stage == "Knockout":
-                            if "Qualifying_Team" in headers:
+                            qf_plus_save = is_qf_plus(selected_id)
+
+                            # "Team Advances" (Qualifying_Team) is no longer a QF+ question —
+                            # exact score already determines the winner, so skip this write.
+                            if not qf_plus_save and "Qualifying_Team" in headers:
                                 target_ws.update_cell(sheet_row_num, headers.index("Qualifying_Team") + 1, actual_qual_val)
 
-                            if is_qf_plus(selected_id):
+                            if qf_plus_save:
                                 if "Actual_HomeScore" in headers:
                                     target_ws.update_cell(sheet_row_num, headers.index("Actual_HomeScore") + 1, actual_home_score)
                                 if "Actual_AwayScore" in headers:
                                     target_ws.update_cell(sheet_row_num, headers.index("Actual_AwayScore") + 1, actual_away_score)
                                 if "Actual_NominatedScorer" in headers:
-                                    target_ws.update_cell(sheet_row_num, headers.index("Actual_NominatedScorer") + 1, actual_q6_val)
+                                    # Multiple anytime scorers are possible - store as a
+                                    # comma-joined string in the existing column so the sheet
+                                    # structure doesn't need to change.
+                                    actual_q6_str = ", ".join(actual_q6_selected) if actual_q6_selected else Q6_NOGOAL_LABEL
+                                    target_ws.update_cell(sheet_row_num, headers.index("Actual_NominatedScorer") + 1, actual_q6_str)
                             elif "Actual_GoalGap" in headers:
                                 target_ws.update_cell(sheet_row_num, headers.index("Actual_GoalGap") + 1, actual_gap_val)
 
@@ -1489,8 +1515,9 @@ with tab3:
                                 if "Actual_MethodOfFirstGoal" in headers:
                                     target_ws.update_cell(sheet_row_num, headers.index("Actual_MethodOfFirstGoal") + 1, actual_method_val)
 
-                            # 2b. Auto-update team_status: mark the losing team as eliminated
-                            if team_status_worksheet is not None:
+                            # 2b. Auto-update team_status: mark the losing team as eliminated.
+                            # Not tracked for QF+ matches, since "Team Advances" no longer exists there.
+                            if not qf_plus_save and team_status_worksheet is not None:
                                 try:
                                     loser_raw = match_row['Away_Team'] if str(actual_qual_val).strip() == str(match_row['Home_Team']).strip() else match_row['Home_Team']
                                     loser_clean = clean_country_name(loser_raw)
