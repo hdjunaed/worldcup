@@ -654,6 +654,21 @@ def get_player_photo(player_name):
     img_path = match.iloc[0].get('Image_File', '')
     return img_path if img_path and os.path.exists(img_path) else None
 
+def get_player_note(player_name):
+    """Looks up a short set-piece duty note (e.g. 'Penalty taker') for a player from
+    golden_boot_candidates' Scoring_Note column. This is deliberately NOT AI-generated -
+    penalty/free-kick duty is precise factual info that's easy to get subtly wrong if
+    paraphrased, so it's just plain maintained data, shown as-is. Returns None (not an
+    error) if the sheet/column doesn't exist yet or nothing's been entered for this
+    player - Q6 works fine either way, this is a nice-to-have consideration for kids."""
+    if golden_boot_df.empty or 'Player_Name' not in golden_boot_df.columns or 'Scoring_Note' not in golden_boot_df.columns:
+        return None
+    match = golden_boot_df[golden_boot_df['Player_Name'].str.strip() == str(player_name).strip()]
+    if match.empty:
+        return None
+    note = str(match.iloc[0].get('Scoring_Note', '')).strip()
+    return note if note else None
+
 tab1, tab2, tab3 = st.tabs(["📊 Leaderboard", "⚽ Submit Predictions", "🔒 Admin Engine"])
 
 # ==========================================
@@ -1231,6 +1246,16 @@ with tab2:
                         else:
                             eligible_players = scorer_ladder
 
+                        # Set-piece cheat sheet - penalty/free-kick takers get extra chances to
+                        # score, so it's a genuinely useful thing to weigh before picking. Only
+                        # shows players that actually have a note entered against them.
+                        players_with_notes = [(e, get_player_note(e["name"])) for e in eligible_players]
+                        players_with_notes = [(e, note) for e, note in players_with_notes if note]
+                        if players_with_notes:
+                            with st.expander("📋 Set-piece cheat sheet (who takes penalties/free-kicks?)"):
+                                for e, note in players_with_notes:
+                                    st.markdown(f"**{e['name']}** ({e['country']}): {note}")
+
                         label_to_entry = {}
                         option_labels = ["Select player..."]
                         for e in eligible_players:
@@ -1250,6 +1275,9 @@ with tab2:
                             photo = get_player_photo(entry["name"])
                             if photo:
                                 st.image(photo, width=100, caption=f"{entry['name']} ({entry['country']})")
+                            note = get_player_note(entry["name"])
+                            if note:
+                                st.caption(f"📋 {note}")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                 if qf_plus:
