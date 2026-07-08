@@ -1128,13 +1128,28 @@ with tab2:
                         # since they were picked to score first) - still fully editable.
                         default_home_score = 1 if q1_first == home_clean else 0
                         default_away_score = 1 if q1_first == away_clean else 0
+                        # IMPORTANT: the key includes q1_first. Streamlit only honours the
+                        # `value=` argument the FIRST time a given key is rendered - on every
+                        # rerun after that, it silently keeps whatever's already in session
+                        # state for that key and ignores `value=` entirely. Without this,
+                        # switching your "who scores first" pick would leave the score boxes
+                        # stuck showing the OLD default instead of updating to match your new
+                        # pick, which is exactly the confusing behaviour being fixed here.
+                        score_key_suffix = q1_first if q1_first else "none"
                         sc_col1, sc_col2 = st.columns(2)
                         with sc_col1:
-                            q2_home_score = st.number_input(f"{home_clean} Score", min_value=0, max_value=20, step=1, value=default_home_score, key=f"q2home_{m_id}")
+                            q2_home_score = st.number_input(f"{home_clean} Score", min_value=0, max_value=20, step=1, value=default_home_score, key=f"q2home_{m_id}_{score_key_suffix}")
                         with sc_col2:
-                            q2_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=default_away_score, key=f"q2away_{m_id}")
+                            q2_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=default_away_score, key=f"q2away_{m_id}_{score_key_suffix}")
                         if q2_home_score == 0 and q2_away_score == 0:
                             st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
+
+                        # Live cross-check, shown immediately rather than only at submit time -
+                        # you were picked to score first, so your own score can't be 0.
+                        if q1_first == home_clean and q2_home_score == 0:
+                            st.error(f"❌ You picked {home_clean} to score first, so their score can't be 0 — bump it up to at least 1.")
+                        elif q1_first == away_clean and q2_away_score == 0:
+                            st.error(f"❌ You picked {away_clean} to score first, so their score can't be 0 — bump it up to at least 1.")
                 else:
                     st.markdown("#### 📏 What's the goal gap when the final whistle blows?")
                     st.caption("Count the difference in goals after 90 mins + extra time — but NOT penalty shootouts. So if it's 2-1 after extra time, the gap is 1.")
