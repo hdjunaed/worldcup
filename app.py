@@ -581,7 +581,10 @@ def is_once_off_locked():
 QF_MATCH_ID_THRESHOLD = 97
 QF_TIME_BRACKET_OPTIONS = ["1st Half NT", "2nd Half NT", "1st Half ET", "2nd Half ET"]
 Q6_NOGOAL_LABEL = "No Goal"
-Q6_CATCHALL_POINTS = 10  # points for correctly calling "No Goal" (no anytime scorer)
+Q6_CATCHALL_POINTS = 10  # points for "none of these named players score anytime" (goal happens, just not from the list)
+Q6_NO_GOAL_POINTS = 30   # points for correctly calling a true 0-0 (no goals at all, from anyone) - a genuinely
+                         # rarer outcome than even the longest-shot named player scoring, so it earns more
+                         # than the general catchall above rather than being tied to it
 
 # --- DEV OVERRIDE: force specific matches into the prediction window early ---
 # Temporary way to open a match for predictions before its normal rolling
@@ -626,17 +629,17 @@ def parse_scorer_ladder(first_scorer_str):
         e["rank_fraction"] = odds_to_fraction[e["odds"]]
     return entries
 
-# 8 distinct emoji, cold (safest pick, fewest points) -> hot (riskiest pick, most
-# points). Capped at 8 since that's the max number of named players per match.
-TEMP_EMOJI_GRADIENT = ["🧊", "❄️", "🌤️", "☀️", "🌡️", "🔥", "🌋", "💥"]
+# 10 distinct emoji, cold (safest pick, fewest points) -> hot (riskiest pick, most
+# points). Capped at 10 since that's the max number of named players per match.
+TEMP_EMOJI_GRADIENT = ["🧊", "❄️", "🌬️", "⛅", "🌤️", "☀️", "🌡️", "🔥", "🌋", "💥"]
 
 def temp_emoji(fraction):
     """Cold (favourite, low points) -> hot (longshot, high points) emoji scale.
-    Maps the 0-1 rank_fraction proportionally onto the 8-slot gradient above.
-    With <=8 distinct odds tiers this is guaranteed to give every tier its own
+    Maps the 0-1 rank_fraction proportionally onto the 10-slot gradient above.
+    With <=10 distinct odds tiers this is guaranteed to give every tier its own
     unique emoji - the old fixed-threshold-bucket version could double up two
-    close-together tiers onto the same emoji; scaling onto 8 evenly-spaced
-    slots and rounding can't collide as long as there are 8 tiers or fewer."""
+    close-together tiers onto the same emoji; scaling onto 10 evenly-spaced
+    slots and rounding can't collide as long as there are 10 tiers or fewer."""
     idx = round(fraction * (len(TEMP_EMOJI_GRADIENT) - 1))
     idx = max(0, min(idx, len(TEMP_EMOJI_GRADIENT) - 1))
     return TEMP_EMOJI_GRADIENT[idx]
@@ -1099,8 +1102,9 @@ with tab2:
                     scorer_ladder = parse_scorer_ladder(str(odds_data.get('First_Scorer_Data', '')))
 
                 if qf_plus:
-                    q6_max_pts = max([e['points'] for e in scorer_ladder], default=Q6_CATCHALL_POINTS)
-                    max_pts = 10 + 20 + 10 + 10 + q6_max_pts  # Q1(first scorer team)+Q2(score)+Q3(time)+Q4(method)+Q5(anytime scorer, ladder max)
+                    ladder_max = max([e['points'] for e in scorer_ladder], default=Q6_CATCHALL_POINTS)
+                    q6_max_pts = max(ladder_max, Q6_NO_GOAL_POINTS)
+                    max_pts = 10 + 20 + 10 + 10 + q6_max_pts  # Q1(first scorer team)+Q2(score)+Q3(time)+Q4(method)+Q5(anytime scorer, ladder or No Goal max)
                     st.info(f"🏆 Knockout Stage: up to {max_pts} Points Total (Anytime Scorer's max varies by match)")
                 elif round16_plus:
                     max_pts = 60
@@ -1233,7 +1237,7 @@ with tab2:
                         st.warning("⚠️ No scorer odds found for this match — check First_Scorer_Data in Match_Odds_Feed.")
                     elif qf_zero_zero:
                         q6_pick = "No Goal"
-                        st.info(f"🔒 You predicted 0-0 — automatically locked to **No Goal** (worth **{Q6_CATCHALL_POINTS} pts** if the actual result is also 0-0).")
+                        st.info(f"🔒 You predicted 0-0 — automatically locked to **No Goal** (worth **{Q6_NO_GOAL_POINTS} pts** if the actual result is also 0-0 — a true scoreless draw is rarer than even the biggest longshot player scoring, so it pays more than the usual catch-all).")
                     else:
                         home_scored = q2_home_score > 0
                         away_scored = q2_away_score > 0
@@ -1499,7 +1503,8 @@ with tab3:
 
                 st.markdown("### Points Preview:")
                 if qf_plus_admin:
-                    q6_max_pts_admin = max([e['points'] for e in scorer_ladder_admin], default=Q6_CATCHALL_POINTS)
+                    ladder_max_admin = max([e['points'] for e in scorer_ladder_admin], default=Q6_CATCHALL_POINTS)
+                    q6_max_pts_admin = max(ladder_max_admin, Q6_NO_GOAL_POINTS)
                     max_pts_admin = 10 + 20 + 10 + 10 + q6_max_pts_admin
                 else:
                     max_pts_admin = 60 if round16_plus_admin else 30
@@ -1539,7 +1544,7 @@ with tab3:
                     if qf_plus_admin:
                         p_q6 = str(match_row.get(f'{p}_NominatedScorer', "")).strip()
                         if p_q6 == Q6_NOGOAL_LABEL:
-                            if not actual_q6_selected: earned += Q6_CATCHALL_POINTS
+                            if not actual_q6_selected: earned += Q6_NO_GOAL_POINTS
                         elif p_q6 != "" and p_q6 in actual_q6_selected:
                             earned += q6_points_lookup.get(p_q6, 0)
                         preview_line += f" | Anytime Scorer: {p_q6 or '—'}"
