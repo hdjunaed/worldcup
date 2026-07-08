@@ -587,7 +587,7 @@ Q6_CATCHALL_POINTS = 10  # points for correctly calling "No Goal" (no anytime sc
 # Temporary way to open a match for predictions before its normal rolling
 # window kicks in, without touching kickoff times. Remove/empty this list
 # once the normal window naturally reaches these matches.
-FORCE_OPEN_MATCHES = ["97"]
+FORCE_OPEN_MATCHES = ["97", "98", "99", "100"]
 
 def is_qf_plus(match_id):
     try:
@@ -626,16 +626,20 @@ def parse_scorer_ladder(first_scorer_str):
         e["rank_fraction"] = odds_to_fraction[e["odds"]]
     return entries
 
+# 8 distinct emoji, cold (safest pick, fewest points) -> hot (riskiest pick, most
+# points). Capped at 8 since that's the max number of named players per match.
+TEMP_EMOJI_GRADIENT = ["🧊", "❄️", "🌤️", "☀️", "🌡️", "🔥", "🌋", "💥"]
+
 def temp_emoji(fraction):
     """Cold (favourite, low points) -> hot (longshot, high points) emoji scale.
-    Native st.selectbox/st.radio only render plain text labels, so this is the
-    closest we can get to a visual gradient without a custom HTML picker."""
-    if fraction <= 0.15: return "🧊"
-    if fraction <= 0.35: return "❄️"
-    if fraction <= 0.55: return "🌤️"
-    if fraction <= 0.75: return "☀️"
-    if fraction <= 0.9:  return "🔥"
-    return "🔥🔥"
+    Maps the 0-1 rank_fraction proportionally onto the 8-slot gradient above.
+    With <=8 distinct odds tiers this is guaranteed to give every tier its own
+    unique emoji - the old fixed-threshold-bucket version could double up two
+    close-together tiers onto the same emoji; scaling onto 8 evenly-spaced
+    slots and rounding can't collide as long as there are 8 tiers or fewer."""
+    idx = round(fraction * (len(TEMP_EMOJI_GRADIENT) - 1))
+    idx = max(0, min(idx, len(TEMP_EMOJI_GRADIENT) - 1))
+    return TEMP_EMOJI_GRADIENT[idx]
 
 def get_player_photo(player_name):
     """Looks up a player's photo from golden_boot_candidates by exact name match.
@@ -743,7 +747,7 @@ with tab1:
                             p_away_sc = str(arow.get(f'{p}_AwayScore', "")).strip()
                             p_row["🔢 Score"] = f"{p_home_sc}-{p_away_sc}" if p_home_sc != "" and p_away_sc != "" else "—"
                             p_nominated = str(arow.get(f'{p}_NominatedScorer', "")).strip()
-                            p_row["🎯 Anytime Scorer"] = p_nominated or "—"
+                            p_row["🏃 Anytime Scorer"] = p_nominated or "—"
                         else:
                             p_qual = str(arow.get(f'{p}_Qualifier', "")).strip()
                             p_gap = str(arow.get(f'{p}_GoalGap', "")).strip()
@@ -886,6 +890,10 @@ with tab2:
             
         # Pull active Knockout matches
         active_ko = knockout_df[knockout_df['Status'] != 'Completed'] if not knockout_df.empty else pd.DataFrame()
+        # "Advances" and "Goal Gap" only apply to pre-QF matches (R32 / R16-QF-1). Once
+        # nothing pre-QF is left active, drop those columns entirely instead of showing
+        # them full of "N/A" - cleaner table once the tournament moves past R16.
+        any_pre_qf_active = any(not is_qf_plus(mid) for mid in active_ko['Match_ID']) if not active_ko.empty else False
         for _, row in active_ko.iterrows():
             m_id = row['Match_ID']
             first_scorer = str(row.get(f'{user}_FirstScorer', "")).strip()
@@ -902,18 +910,19 @@ with tab2:
             if is_qf_plus(m_id):
                 home_sc = str(row.get(f'{user}_HomeScore', "")).strip()
                 away_sc = str(row.get(f'{user}_AwayScore', "")).strip()
-                ko_row["🏆 Advances"] = "N/A"
-                ko_row["📏 Goal Gap"] = "N/A"
+                if any_pre_qf_active:
+                    ko_row["🏆 Advances"] = "N/A"
+                    ko_row["📏 Goal Gap"] = "N/A"
                 ko_row["🔢 Score"] = f"{home_sc}-{away_sc}" if home_sc != "" and away_sc != "" else "—"
                 nominated = str(row.get(f'{user}_NominatedScorer', "")).strip()
-                ko_row["🎯 Anytime Scorer"] = nominated or "—"
+                ko_row["🏃 Anytime Scorer"] = nominated or "—"
             else:
                 qualifier = str(row.get(f'{user}_Qualifier', "")).strip()
                 goal_gap = str(row.get(f'{user}_GoalGap', "")).strip()
                 ko_row["🏆 Advances"] = clean_country_name(qualifier) if qualifier else "—"
                 ko_row["📏 Goal Gap"] = goal_gap or "—"
                 ko_row["🔢 Score"] = "N/A"
-                ko_row["🎯 Anytime Scorer"] = "N/A"
+                ko_row["🏃 Anytime Scorer"] = "N/A"
 
             if is_round16_plus(m_id):
                 time_pick = str(row.get(f'{user}_TimeOfFirstGoal', "")).strip()
@@ -1203,7 +1212,7 @@ with tab2:
                 q6_pick = None
                 if qf_plus:
                     st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
-                    st.markdown("#### 🎯🔥 Who scores anytime? (higher risk = higher reward!)")
+                    st.markdown("#### 🏃🔥 Who scores anytime? (higher risk = higher reward!)")
                     st.caption("Any goal in Normal Time or Extra Time counts — penalty shootout goals don't count.")
                     if not scorer_ladder:
                         st.warning("⚠️ No scorer odds found for this match — check First_Scorer_Data in Match_Odds_Feed.")
