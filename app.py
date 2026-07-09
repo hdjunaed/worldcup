@@ -657,6 +657,19 @@ def get_player_photo(player_name):
     img_path = match.iloc[0].get('Image_File', '')
     return img_path if img_path and os.path.exists(img_path) else None
 
+def saved_index(options, saved_value):
+    """Returns the index of saved_value within options, or None if it's empty or
+    doesn't match anything. Used so switching between users re-populates each
+    question with THAT user's already-saved pick, instead of leaving whatever
+    the previously-viewed user last had on screen (widget state in Streamlit is
+    otherwise shared across reruns by key, regardless of which user is showing)."""
+    if not saved_value:
+        return None
+    try:
+        return options.index(saved_value)
+    except ValueError:
+        return None
+
 def get_player_note(player_name):
     """Looks up a short set-piece duty note (e.g. 'Penalty taker') for a player from
     golden_boot_candidates' Scoring_Note column. This is deliberately NOT AI-generated -
@@ -1138,7 +1151,15 @@ with tab2:
 
                 st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
                 st.markdown("#### ⚽ Who scores first?")
-                q1_first = st.radio("Select Team:", [home_clean, away_clean, "No Goal (0-0)"], index=None, key=f"q1_{m_id}")
+                saved_first_raw = str(m_row.get(f'{user}_FirstScorer', "")).strip()
+                if saved_first_raw == "No Goal":
+                    saved_first_display = "No Goal (0-0)"
+                elif saved_first_raw:
+                    saved_first_display = clean_country_name(saved_first_raw)
+                else:
+                    saved_first_display = None
+                q1_options = [home_clean, away_clean, "No Goal (0-0)"]
+                q1_first = st.radio("Select Team:", q1_options, index=saved_index(q1_options, saved_first_display), key=f"q1_{m_id}_{user}")
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 q2_gap = None
@@ -1152,23 +1173,41 @@ with tab2:
                         q2_home_score, q2_away_score = 0, 0
                         st.info("🔒 You picked No Goal — score is automatically locked to **0-0**! Already locked in for you. 🎯")
                     else:
-                        # Default the scoring team's box to 1 (their goal tally can't be 0
-                        # since they were picked to score first) - still fully editable.
-                        default_home_score = 1 if q1_first == home_clean else 0
-                        default_away_score = 1 if q1_first == away_clean else 0
-                        # IMPORTANT: the key includes q1_first. Streamlit only honours the
-                        # `value=` argument the FIRST time a given key is rendered - on every
+                        # Prefer this user's already-saved exact score, if they've submitted
+                        # one before - otherwise fall back to the simple "scoring team can't
+                        # be 0" default. This only matters the FIRST time this exact widget
+                        # key is rendered (i.e. right when you switch to this user); if they
+                        # then actively change their Q1 pick during this session, resetting to
+                        # the simple 1/0 default (handled below via score_key_suffix) is still
+                        # correct, since an old saved score wouldn't match a newly-changed pick.
+                        saved_home_score_raw = str(m_row.get(f'{user}_HomeScore', "")).strip()
+                        saved_away_score_raw = str(m_row.get(f'{user}_AwayScore', "")).strip()
+                        if saved_home_score_raw != "" and saved_away_score_raw != "" and saved_first_display == q1_first:
+                            try:
+                                default_home_score = int(float(saved_home_score_raw))
+                                default_away_score = int(float(saved_away_score_raw))
+                            except ValueError:
+                                default_home_score = 1 if q1_first == home_clean else 0
+                                default_away_score = 1 if q1_first == away_clean else 0
+                        else:
+                            # Default the scoring team's box to 1 (their goal tally can't be 0
+                            # since they were picked to score first) - still fully editable.
+                            default_home_score = 1 if q1_first == home_clean else 0
+                            default_away_score = 1 if q1_first == away_clean else 0
+                        # IMPORTANT: the key includes q1_first AND user. Streamlit only honours
+                        # the `value=` argument the FIRST time a given key is rendered - on every
                         # rerun after that, it silently keeps whatever's already in session
-                        # state for that key and ignores `value=` entirely. Without this,
-                        # switching your "who scores first" pick would leave the score boxes
-                        # stuck showing the OLD default instead of updating to match your new
-                        # pick, which is exactly the confusing behaviour being fixed here.
+                        # state for that key and ignores `value=` entirely. Without user in the
+                        # key, switching between people would leave the score boxes showing
+                        # whichever user was last edited instead of resetting per-user; without
+                        # q1_first in the key, switching your "who scores first" pick would leave
+                        # the score boxes stuck showing the OLD default instead of updating.
                         score_key_suffix = q1_first if q1_first else "none"
                         sc_col1, sc_col2 = st.columns(2)
                         with sc_col1:
-                            q2_home_score = st.number_input(f"{home_clean} Score", min_value=0, max_value=20, step=1, value=default_home_score, key=f"q2home_{m_id}_{score_key_suffix}")
+                            q2_home_score = st.number_input(f"{home_clean} Score", min_value=0, max_value=20, step=1, value=default_home_score, key=f"q2home_{m_id}_{user}_{score_key_suffix}")
                         with sc_col2:
-                            q2_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=default_away_score, key=f"q2away_{m_id}_{score_key_suffix}")
+                            q2_away_score = st.number_input(f"{away_clean} Score", min_value=0, max_value=20, step=1, value=default_away_score, key=f"q2away_{m_id}_{user}_{score_key_suffix}")
                         if q2_home_score == 0 and q2_away_score == 0:
                             st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
 
@@ -1185,7 +1224,9 @@ with tab2:
                         q2_gap = "0"
                         st.info("🔒 You picked No Goal — so your goal gap is automatically locked to **0**! No goals = no difference. If the match ends 0-0 and goes to a penalty shootout, you'll still earn your **10 pts** for the goal gap — it's already locked in for you, no need to pick anything! 🎯")
                     else:
-                        q2_gap = st.radio("Select Goal Gap:", ["0", "1", "2", "3+"], index=None, key=f"q2_{m_id}")
+                        saved_gap = str(m_row.get(f'{user}_GoalGap', "")).strip()
+                        gap_options = ["0", "1", "2", "3+"]
+                        q2_gap = st.radio("Select Goal Gap:", gap_options, index=saved_index(gap_options, saved_gap), key=f"q2_{m_id}_{user}")
                         if q2_gap == "0":
                             st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -1194,7 +1235,10 @@ with tab2:
                 if not qf_plus:
                     st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
                     st.markdown("#### 🏆 Which team advances to the next round?")
-                    q3_adv = st.radio("Select Winner:", [home_clean, away_clean], index=None, key=f"q3_{m_id}")
+                    saved_qual_raw = str(m_row.get(f'{user}_Qualifier', "")).strip()
+                    saved_qual_display = clean_country_name(saved_qual_raw) if saved_qual_raw else None
+                    q3_options = [home_clean, away_clean]
+                    q3_adv = st.radio("Select Winner:", q3_options, index=saved_index(q3_options, saved_qual_display), key=f"q3_{m_id}_{user}")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                 # For QF+, "no goal" is driven by the exact score prediction itself (Q2), not
@@ -1214,7 +1258,10 @@ with tab2:
                         st.info("🔒 No goals predicted — Time of 1st Goal is automatically locked to **No Goal**.")
                     else:
                         bracket_options = QF_TIME_BRACKET_OPTIONS if qf_plus else TIME_BRACKET_OPTIONS
-                        q4_time = st.selectbox("Select time bracket:", ["Select bracket..."] + bracket_options, key=f"q4_{m_id}")
+                        saved_time = str(m_row.get(f'{user}_TimeOfFirstGoal', "")).strip()
+                        q4_full_options = ["Select bracket..."] + bracket_options
+                        q4_default_index = q4_full_options.index(saved_time) if saved_time in bracket_options else 0
+                        q4_time = st.selectbox("Select time bracket:", q4_full_options, index=q4_default_index, key=f"q4_{m_id}_{user}")
                         if q4_time == "Select bracket...":
                             q4_time = None
                     st.markdown("</div>", unsafe_allow_html=True)
@@ -1225,7 +1272,8 @@ with tab2:
                         q5_method = "No Goal"
                         st.info("🔒 Locked to **No Goal**.")
                     else:
-                        q5_method = st.radio("Select method:", METHOD_OPTIONS, index=None, key=f"q5_{m_id}")
+                        saved_method = str(m_row.get(f'{user}_MethodOfFirstGoal', "")).strip()
+                        q5_method = st.radio("Select method:", METHOD_OPTIONS, index=saved_index(METHOD_OPTIONS, saved_method), key=f"q5_{m_id}_{user}")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                 q6_pick = None
@@ -1267,10 +1315,18 @@ with tab2:
                             option_labels.append(label)
                             label_to_entry[label] = e
 
-                        # Key includes which side(s) are eligible so the picker resets
-                        # cleanly if the person changes their exact-score prediction.
-                        q6_key = f"q6_{m_id}_{int(home_scored)}_{int(away_scored)}"
-                        picked_label = st.selectbox("Pick a player:", option_labels, key=q6_key)
+                        # Key includes which side(s) are eligible AND the user, so the picker
+                        # resets cleanly both when the exact-score prediction changes and when
+                        # switching between different users.
+                        q6_key = f"q6_{m_id}_{user}_{int(home_scored)}_{int(away_scored)}"
+                        saved_scorer = str(m_row.get(f'{user}_NominatedScorer', "")).strip()
+                        q6_default_index = 0
+                        for idx, lbl in enumerate(option_labels):
+                            entry_check = label_to_entry.get(lbl)
+                            if entry_check and entry_check["name"] == saved_scorer:
+                                q6_default_index = idx
+                                break
+                        picked_label = st.selectbox("Pick a player:", option_labels, index=q6_default_index, key=q6_key)
                         if picked_label == "Select player...":
                             q6_pick = None
                         else:
