@@ -598,6 +598,60 @@ def is_qf_plus(match_id):
     except Exception:
         return False
 
+# ==========================================
+# SEMI FINAL+ CONSTANTS (Match_ID >= 101)
+# Adds a new "Method of Progression" question (which team wins in which stage -
+# NT/ET/PK), ranked on its own steeper points ladder since there are only ever
+# up to 6 team+stage combos (vs. up to 24 for Anytime Scorer). Everything else
+# from the QF+ format carries over unchanged (Time bracket, Method, Anytime
+# Scorer just gets a wider player cap here). QF matches (97-100) are already
+# done and dusted, so this only ever applies from 101 onward.
+# ==========================================
+SF_MATCH_ID_THRESHOLD = 101
+
+def is_sf_plus(match_id):
+    try:
+        return int(match_id) >= SF_MATCH_ID_THRESHOLD
+    except Exception:
+        return False
+
+PROGRESSION_STAGE_CODE = {"Normal Time": "NT", "Extra Time": "ET", "Penalties": "PK"}
+
+def parse_progression_ladder(progression_str):
+    """Parse 'Team Stage Odds, Team Stage Odds, ...' from Match_Odds_Feed's
+    Progression_Data, e.g. 'France Normal Time 2.30, Spain Normal Time 3.10,
+    France Extra Time 9.00, Spain Extra Time 11.00, France Penalties 10.00,
+    Spain Penalties 11.00'. Returns entries ranked ascending by odds (favourite
+    first), each tagged with its points on a steeper ladder than Anytime Scorer's
+    (there are only ever up to 6 combos here, so bigger steps feel right): 10,
+    14, 18, 22... (+4 per UNIQUE odds value, mirroring the tie-handling already
+    used for Anytime Scorer - entries sharing identical odds share identical
+    points and emoji)."""
+    entries = []
+    for chunk in str(progression_str).split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        m = re.match(r"^(.*?)\s+(Normal Time|Extra Time|Penalties)\s+([\d.]+)$", chunk)
+        if m:
+            team, stage_label, odds = m.group(1).strip(), m.group(2).strip(), float(m.group(3))
+            entries.append({
+                "team": clean_country_name(team),
+                "stage_label": stage_label,
+                "stage_code": PROGRESSION_STAGE_CODE.get(stage_label, stage_label),
+                "odds": odds,
+            })
+    entries.sort(key=lambda e: e["odds"])
+
+    unique_odds = sorted(set(e["odds"] for e in entries))
+    n_unique = len(unique_odds)
+    odds_to_points = {o: 10 + 4 * i for i, o in enumerate(unique_odds)}
+    odds_to_fraction = {o: (i / (n_unique - 1) if n_unique > 1 else 0) for i, o in enumerate(unique_odds)}
+    for e in entries:
+        e["points"] = odds_to_points[e["odds"]]
+        e["rank_fraction"] = odds_to_fraction[e["odds"]]
+    return entries
+
 def parse_scorer_ladder(first_scorer_str):
     """Parse 'Name (Country) Odds, Name (Country) Odds, ...' from Match_Odds_Feed's
     First_Scorer_Data. Returns entries ranked ascending by odds (favourite first),
@@ -629,20 +683,26 @@ def parse_scorer_ladder(first_scorer_str):
         e["rank_fraction"] = odds_to_fraction[e["odds"]]
     return entries
 
-# 10 distinct emoji, cold (safest pick, fewest points) -> hot (riskiest pick, most
-# points). Capped at 10 since that's the max number of named players per match.
-TEMP_EMOJI_GRADIENT = ["🧊", "❄️", "🌬️", "⛅", "🌤️", "☀️", "🌡️", "🔥", "🌋", "💥"]
+# 24 distinct emoji, cold (safest pick, fewest points) -> hot (riskiest pick,
+# most points). Capped at 24 since that's the max total named players across
+# both sides (up to 12 each) for Anytime Scorer from SF+ onward. Also reused
+# for the Method of Progression ladder (up to 6 combos), which just uses a
+# smaller slice of the same gradient proportionally.
+TEMP_EMOJI_GRADIENT = [
+    "🧊", "❄️", "🥶", "🌨️", "⛄", "🌬️", "⛅", "🌥️", "🌤️", "🌦️", "🌈", "☀️",
+    "🌞", "🏖️", "🌡️", "♨️", "🥵", "🌶️", "🔥", "🌋", "⚡", "☄️", "🧨", "💥",
+]
 
 def temp_emoji(fraction):
     """Cold (favourite, low points) -> hot (longshot, high points) emoji scale.
-    Maps the 0-1 rank_fraction proportionally onto the 10-slot gradient above.
-    With <=10 distinct odds tiers this is guaranteed to give every tier its own
-    unique emoji - the old fixed-threshold-bucket version could double up two
-    close-together tiers onto the same emoji; scaling onto 10 evenly-spaced
-    slots and rounding can't collide as long as there are 10 tiers or fewer."""
+    Maps the 0-1 rank_fraction proportionally onto the 24-slot gradient above.
+    With <=24 distinct odds tiers this is guaranteed to give every tier its own
+    unique emoji - scaling onto evenly-spaced slots and rounding can't collide
+    as long as there are 24 tiers or fewer."""
     idx = round(fraction * (len(TEMP_EMOJI_GRADIENT) - 1))
     idx = max(0, min(idx, len(TEMP_EMOJI_GRADIENT) - 1))
     return TEMP_EMOJI_GRADIENT[idx]
+
 
 def get_player_photo(player_name):
     """Looks up a player's photo from golden_boot_candidates by exact name match.
@@ -777,6 +837,9 @@ with tab1:
                             p_home_sc = str(arow.get(f'{p}_HomeScore', "")).strip()
                             p_away_sc = str(arow.get(f'{p}_AwayScore', "")).strip()
                             p_row["🔢 Score"] = f"{p_home_sc}-{p_away_sc}" if p_home_sc != "" and p_away_sc != "" else "—"
+                            if is_sf_plus(a_mid):
+                                p_progression = str(arow.get(f'{p}_ProgressionPick', "")).strip()
+                                p_row["🏁 Progression"] = p_progression or "—"
                             p_nominated = str(arow.get(f'{p}_NominatedScorer', "")).strip()
                             p_row["🏃 Anytime Scorer"] = p_nominated or "—"
                         else:
@@ -945,6 +1008,11 @@ with tab2:
                     ko_row["🏆 Advances"] = "N/A"
                     ko_row["📏 Goal Gap"] = "N/A"
                 ko_row["🔢 Score"] = f"{home_sc}-{away_sc}" if home_sc != "" and away_sc != "" else "—"
+                if is_sf_plus(m_id):
+                    progression_pick = str(row.get(f'{user}_ProgressionPick', "")).strip()
+                    ko_row["🏁 Progression"] = progression_pick or "—"
+                else:
+                    ko_row["🏁 Progression"] = "N/A"
                 nominated = str(row.get(f'{user}_NominatedScorer', "")).strip()
                 ko_row["🏃 Anytime Scorer"] = nominated or "—"
             else:
@@ -953,6 +1021,7 @@ with tab2:
                 ko_row["🏆 Advances"] = clean_country_name(qualifier) if qualifier else "—"
                 ko_row["📏 Goal Gap"] = goal_gap or "—"
                 ko_row["🔢 Score"] = "N/A"
+                ko_row["🏁 Progression"] = "N/A"
                 ko_row["🏃 Anytime Scorer"] = "N/A"
 
             if is_round16_plus(m_id):
@@ -1096,9 +1165,10 @@ with tab2:
                             st.error(f"Failed to update spreadsheet: {write_err}")
 
             else:
-                # KNOCKOUT STAGE — 3-Q (R32) / 5-Q (R16-QF-1) / 6-Q (QF+, Match_ID >= 97) FORMAT
+                # KNOCKOUT STAGE — 3-Q (R32) / 5-Q (R16-QF-1) / 6-Q (QF+) / 7-Q (SF+, Match_ID >= 101) FORMAT
                 round16_plus = is_round16_plus(m_id)
                 qf_plus = is_qf_plus(m_id)
+                sf_plus = is_sf_plus(m_id)
 
                 # --- GOOGLE AI STUDIO NARRATIVE INJECTION ---
                 odds_data = None
@@ -1109,16 +1179,21 @@ with tab2:
 
                 # For QF+, the Q6 player ladder comes straight from First_Scorer_Data -
                 # parsed once here so we can both show the max-points banner accurately
-                # and build the Q6 picker further down.
+                # and build the Q6 picker further down. For SF+, the Progression ladder
+                # (which team wins in which stage) comes from Progression_Data the same way.
                 scorer_ladder = []
                 if qf_plus and odds_data is not None:
                     scorer_ladder = parse_scorer_ladder(str(odds_data.get('First_Scorer_Data', '')))
+                progression_ladder = []
+                if sf_plus and odds_data is not None:
+                    progression_ladder = parse_progression_ladder(str(odds_data.get('Progression_Data', '')))
 
                 if qf_plus:
                     ladder_max = max([e['points'] for e in scorer_ladder], default=Q6_CATCHALL_POINTS)
                     q6_max_pts = max(ladder_max, Q6_NO_GOAL_POINTS)
-                    max_pts = 10 + 20 + 10 + 10 + q6_max_pts  # Q1(first scorer team)+Q2(score)+Q3(time)+Q4(method)+Q5(anytime scorer, ladder or No Goal max)
-                    st.info(f"🏆 Knockout Stage: up to {max_pts} Points Total (Anytime Scorer's max varies by match)")
+                    progression_max_pts = max([e['points'] for e in progression_ladder], default=0) if sf_plus else 0
+                    max_pts = 10 + 20 + 10 + 10 + q6_max_pts + progression_max_pts  # Q1(first scorer)+Q2(score)+Q3(time)+Q4(method)+Q5(anytime scorer)+Q(progression, SF+ only)
+                    st.info(f"🏆 Knockout Stage: up to {max_pts} Points Total (Anytime Scorer{'/Progression' if sf_plus else ''}'s max varies by match)")
                 elif round16_plus:
                     max_pts = 60
                     st.info(f"🏆 Knockout Stage: {max_pts} Points Total")
@@ -1171,7 +1246,7 @@ with tab2:
                     st.caption("Final score after 90 mins + extra time — before any penalty shootout.")
                     if q1_first == "No Goal (0-0)":
                         q2_home_score, q2_away_score = 0, 0
-                        st.info("🔒 You picked No Goal — score is automatically locked to **0-0**! Already locked in for you. 🎯")
+                        st.info("🔒 You picked No Goal — score is automatically locked to **0-0**! Already locked in for you — worth **20 pts** if that's the actual result. 🎯")
                     else:
                         # Prefer this user's already-saved exact score, if they've submitted
                         # one before - otherwise fall back to the simple "scoring team can't
@@ -1231,6 +1306,56 @@ with tab2:
                             st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 st.markdown("</div>", unsafe_allow_html=True)
 
+                q4_progression_pick = None
+                if sf_plus:
+                    st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
+                    progression_max = max([e['points'] for e in progression_ladder], default=0)
+                    st.markdown(f"#### 🏁 Method of progression — who wins it, and in which stage? (up to {progression_max} pts)")
+                    if not progression_ladder:
+                        st.warning("⚠️ No progression odds found for this match — check Progression_Data in Match_Odds_Feed.")
+                    elif q2_home_score is None or q2_away_score is None:
+                        st.caption("👆 Enter your exact score above first — this narrows down to the options that actually still make sense.")
+                    else:
+                        # This is entirely dictated by the exact score just entered, not by
+                        # who scored first: a draw at this point (AET, before pens) can ONLY
+                        # mean it's going to penalties - nobody could have won yet. A non-draw
+                        # means someone already won outright, so PK is impossible and only that
+                        # winning team's NT/ET options make sense.
+                        if q2_home_score == q2_away_score:
+                            eligible_progression = [e for e in progression_ladder if e["stage_code"] == "PK"]
+                            st.caption(f"Your score is a draw after ET — that can only mean penalties. Showing PK options only.")
+                        elif q2_home_score > q2_away_score:
+                            eligible_progression = [e for e in progression_ladder if e["team"] == home_clean and e["stage_code"] in ("NT", "ET")]
+                            st.caption(f"You predicted {home_clean} winning outright — showing {home_clean}'s NT/ET options only (no shootout needed if someone's already ahead).")
+                        else:
+                            eligible_progression = [e for e in progression_ladder if e["team"] == away_clean and e["stage_code"] in ("NT", "ET")]
+                            st.caption(f"You predicted {away_clean} winning outright — showing {away_clean}'s NT/ET options only (no shootout needed if someone's already ahead).")
+
+                        prog_label_to_entry = {}
+                        prog_option_labels = ["Select..."]
+                        for e in eligible_progression:
+                            label = f"{temp_emoji(e['rank_fraction'])} {e['team']} wins in {e['stage_label']} — {e['points']} pts"
+                            prog_option_labels.append(label)
+                            prog_label_to_entry[label] = e
+
+                        saved_progression = str(m_row.get(f'{user}_ProgressionPick', "")).strip()
+                        prog_default_index = 0
+                        for idx, lbl in enumerate(prog_option_labels):
+                            entry_check = prog_label_to_entry.get(lbl)
+                            if entry_check and f"{entry_check['team']} {entry_check['stage_label']}" == saved_progression:
+                                prog_default_index = idx
+                                break
+                        # Key includes the eligibility bucket (draw/home/away) AND user, so the
+                        # picker resets cleanly both when the exact score changes and when
+                        # switching between users.
+                        prog_bucket = "draw" if q2_home_score == q2_away_score else ("home" if q2_home_score > q2_away_score else "away")
+                        prog_key = f"q4prog_{m_id}_{user}_{prog_bucket}"
+                        picked_prog_label = st.selectbox("Pick who wins it and how:", prog_option_labels, index=prog_default_index, key=prog_key)
+                        if picked_prog_label != "Select...":
+                            entry = prog_label_to_entry[picked_prog_label]
+                            q4_progression_pick = f"{entry['team']} {entry['stage_label']}"
+                    st.markdown("</div>", unsafe_allow_html=True)
+
                 q3_adv = None
                 if not qf_plus:
                     st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
@@ -1255,7 +1380,7 @@ with tab2:
                     time_locked = qf_zero_zero if qf_plus else (q1_first == "No Goal (0-0)")
                     if time_locked:
                         q4_time = "No Goal"
-                        st.info("🔒 No goals predicted — Time of 1st Goal is automatically locked to **No Goal**.")
+                        st.info(f"🔒 No goals predicted — Time of 1st Goal is automatically locked to **No Goal** (still worth **{q4_points_label}** if that's the actual result).")
                     else:
                         bracket_options = QF_TIME_BRACKET_OPTIONS if qf_plus else TIME_BRACKET_OPTIONS
                         saved_time = str(m_row.get(f'{user}_TimeOfFirstGoal', "")).strip()
@@ -1270,7 +1395,7 @@ with tab2:
                     st.markdown("#### 🎯 How does the 1st goal happen?")
                     if time_locked or q4_time == "No Goal":
                         q5_method = "No Goal"
-                        st.info("🔒 Locked to **No Goal**.")
+                        st.info("🔒 Locked to **No Goal** (still worth **10 pts** if that's the actual result).")
                     else:
                         saved_method = str(m_row.get(f'{user}_MethodOfFirstGoal', "")).strip()
                         q5_method = st.radio("Select method:", METHOD_OPTIONS, index=saved_index(METHOD_OPTIONS, saved_method), key=f"q5_{m_id}_{user}")
@@ -1341,10 +1466,11 @@ with tab2:
                     st.markdown("</div>", unsafe_allow_html=True)
 
                 if qf_plus:
-                    num_questions_label = 5
+                    num_questions_label = 7 if sf_plus else 5
                     required_answered = bool(
                         q1_first and (q2_home_score is not None and q2_away_score is not None)
                         and q4_time and q5_method and q6_pick
+                        and (q4_progression_pick if sf_plus else True)
                     )
 
                     # Cross-question validation: the "who scores first" pick and the exact
@@ -1403,6 +1529,10 @@ with tab2:
                             if qf_plus:
                                 scorer_col_idx = headers.index(f"{user}_NominatedScorer") + 1
                                 target_ws.update_cell(sheet_row_num, scorer_col_idx, q6_pick)
+
+                            if sf_plus:
+                                progression_col_idx = headers.index(f"{user}_ProgressionPick") + 1
+                                target_ws.update_cell(sheet_row_num, progression_col_idx, q4_progression_pick)
                             
                             st.cache_data.clear()
                             st.toast("✅ Prediction saved!", icon="✅")
@@ -1494,6 +1624,7 @@ with tab3:
                 st.markdown("### 1. Enter Actual Match Result (Knockout Stage)")
                 round16_plus_admin = is_round16_plus(selected_id)
                 qf_plus_admin = is_qf_plus(selected_id)
+                sf_plus_admin = is_sf_plus(selected_id)
 
                 act_first_selection = st.radio("1. Who scored first?", [home_clean, away_clean, "No Goal (0-0)"])
 
@@ -1557,17 +1688,51 @@ with tab3:
                         picked_admin_labels = st.multiselect("Select every player who scored (NT + ET):", admin_option_labels, key="admin_q6_multi")
                         actual_q6_selected = [label_to_entry_admin[lbl]["name"] for lbl in picked_admin_labels]
 
+                # Method of Progression (SF+ only): single actual outcome - only one
+                # team+stage combo can be true, so this is a straightforward radio, not
+                # a multiselect like Anytime Scorer. Options narrowed by the actual exact
+                # score, same draw/home/away logic as the user-facing picker.
+                actual_progression_val = None
+                progression_ladder_admin = []
+                if sf_plus_admin:
+                    st.markdown("##### 6. Method of progression — who actually won it, and in which stage?")
+                    prog_row_admin = odds_df[odds_df['Match_ID'].astype(str) == str(selected_id)] if not odds_df.empty else pd.DataFrame()
+                    if not prog_row_admin.empty:
+                        progression_ladder_admin = parse_progression_ladder(str(prog_row_admin.iloc[0].get('Progression_Data', '')))
+
+                    if not progression_ladder_admin:
+                        st.warning("⚠️ No progression odds found for this match — check Progression_Data in Match_Odds_Feed.")
+                    else:
+                        if actual_home_score == actual_away_score:
+                            eligible_progression_admin = [e for e in progression_ladder_admin if e["stage_code"] == "PK"]
+                        elif actual_home_score > actual_away_score:
+                            eligible_progression_admin = [e for e in progression_ladder_admin if e["team"] == home_clean and e["stage_code"] in ("NT", "ET")]
+                        else:
+                            eligible_progression_admin = [e for e in progression_ladder_admin if e["team"] == away_clean and e["stage_code"] in ("NT", "ET")]
+
+                        prog_label_to_entry_admin = {}
+                        prog_admin_labels = []
+                        for e in eligible_progression_admin:
+                            label = f"{e['team']} wins in {e['stage_label']} — {e['points']} pts"
+                            prog_admin_labels.append(label)
+                            prog_label_to_entry_admin[label] = e
+                        picked_prog_admin_label = st.radio("Actual outcome:", prog_admin_labels, key="admin_progression")
+                        actual_progression_val = f"{prog_label_to_entry_admin[picked_prog_admin_label]['team']} {prog_label_to_entry_admin[picked_prog_admin_label]['stage_label']}"
+
                 st.markdown("### Points Preview:")
                 if qf_plus_admin:
                     ladder_max_admin = max([e['points'] for e in scorer_ladder_admin], default=Q6_CATCHALL_POINTS)
                     q6_max_pts_admin = max(ladder_max_admin, Q6_NO_GOAL_POINTS)
-                    max_pts_admin = 10 + 20 + 10 + 10 + q6_max_pts_admin
+                    progression_max_pts_admin = max([e['points'] for e in progression_ladder_admin], default=0) if sf_plus_admin else 0
+                    max_pts_admin = 10 + 20 + 10 + 10 + q6_max_pts_admin + progression_max_pts_admin
                 else:
                     max_pts_admin = 60 if round16_plus_admin else 30
 
                 # Build a name -> points lookup for this match's Anytime Scorer ladder, used
                 # to award each participant the points THEIR picked player was actually worth.
                 q6_points_lookup = {e["name"]: e["points"] for e in scorer_ladder_admin} if qf_plus_admin else {}
+                # Same idea for Progression: "Team Stage" string -> points.
+                progression_points_lookup = {f"{e['team']} {e['stage_label']}": e["points"] for e in progression_ladder_admin} if sf_plus_admin else {}
 
                 for p in participants:
                     p_first = str(match_row.get(f'{p}_FirstScorer', "")).strip()
@@ -1604,6 +1769,12 @@ with tab3:
                         elif p_q6 != "" and p_q6 in actual_q6_selected:
                             earned += q6_points_lookup.get(p_q6, 0)
                         preview_line += f" | Anytime Scorer: {p_q6 or '—'}"
+
+                    if sf_plus_admin:
+                        p_progression = str(match_row.get(f'{p}_ProgressionPick', "")).strip()
+                        if p_progression != "" and actual_progression_val and p_progression == actual_progression_val:
+                            earned += progression_points_lookup.get(p_progression, 0)
+                        preview_line += f" | Progression: {p_progression or '—'}"
 
                     calculated_points_delta[p] = earned
                     
@@ -1656,6 +1827,8 @@ with tab3:
                                     # structure doesn't need to change.
                                     actual_q6_str = ", ".join(actual_q6_selected) if actual_q6_selected else Q6_NOGOAL_LABEL
                                     target_ws.update_cell(sheet_row_num, headers.index("Actual_NominatedScorer") + 1, actual_q6_str)
+                                if is_sf_plus(selected_id) and "Actual_ProgressionPick" in headers and actual_progression_val:
+                                    target_ws.update_cell(sheet_row_num, headers.index("Actual_ProgressionPick") + 1, actual_progression_val)
                             elif "Actual_GoalGap" in headers:
                                 target_ws.update_cell(sheet_row_num, headers.index("Actual_GoalGap") + 1, actual_gap_val)
 
