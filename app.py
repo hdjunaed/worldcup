@@ -1306,55 +1306,11 @@ with tab2:
                             st.info("🔫 So you think it's going all the way to a penalty shootout? Bold call!")
                 st.markdown("</div>", unsafe_allow_html=True)
 
+                # NOTE: Method of Progression (q4_progression_pick) is built further down,
+                # AFTER Time of 1st Goal and Method - it depends on that answer too (if the
+                # 1st goal happens in ET, NT is impossible as a win stage - the whole 90
+                # minutes must have been scoreless), not just on the exact score.
                 q4_progression_pick = None
-                if sf_plus:
-                    st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
-                    progression_max = max([e['points'] for e in progression_ladder], default=0)
-                    st.markdown(f"#### 🏁 Method of progression — who wins it, and in which stage? (up to {progression_max} pts)")
-                    if not progression_ladder:
-                        st.warning("⚠️ No progression odds found for this match — check Progression_Data in Match_Odds_Feed.")
-                    elif q2_home_score is None or q2_away_score is None:
-                        st.caption("👆 Enter your exact score above first — this narrows down to the options that actually still make sense.")
-                    else:
-                        # This is entirely dictated by the exact score just entered, not by
-                        # who scored first: a draw at this point (AET, before pens) can ONLY
-                        # mean it's going to penalties - nobody could have won yet. A non-draw
-                        # means someone already won outright, so PK is impossible and only that
-                        # winning team's NT/ET options make sense.
-                        if q2_home_score == q2_away_score:
-                            eligible_progression = [e for e in progression_ladder if e["stage_code"] == "PK"]
-                            st.caption(f"Your score is a draw after ET — that can only mean penalties. Showing PK options only.")
-                        elif q2_home_score > q2_away_score:
-                            eligible_progression = [e for e in progression_ladder if e["team"] == home_clean and e["stage_code"] in ("NT", "ET")]
-                            st.caption(f"You predicted {home_clean} winning outright — showing {home_clean}'s NT/ET options only (no shootout needed if someone's already ahead).")
-                        else:
-                            eligible_progression = [e for e in progression_ladder if e["team"] == away_clean and e["stage_code"] in ("NT", "ET")]
-                            st.caption(f"You predicted {away_clean} winning outright — showing {away_clean}'s NT/ET options only (no shootout needed if someone's already ahead).")
-
-                        prog_label_to_entry = {}
-                        prog_option_labels = ["Select..."]
-                        for e in eligible_progression:
-                            label = f"{temp_emoji(e['rank_fraction'])} {e['team']} wins in {e['stage_label']} — {e['points']} pts"
-                            prog_option_labels.append(label)
-                            prog_label_to_entry[label] = e
-
-                        saved_progression = str(m_row.get(f'{user}_ProgressionPick', "")).strip()
-                        prog_default_index = 0
-                        for idx, lbl in enumerate(prog_option_labels):
-                            entry_check = prog_label_to_entry.get(lbl)
-                            if entry_check and f"{entry_check['team']} {entry_check['stage_label']}" == saved_progression:
-                                prog_default_index = idx
-                                break
-                        # Key includes the eligibility bucket (draw/home/away) AND user, so the
-                        # picker resets cleanly both when the exact score changes and when
-                        # switching between users.
-                        prog_bucket = "draw" if q2_home_score == q2_away_score else ("home" if q2_home_score > q2_away_score else "away")
-                        prog_key = f"q4prog_{m_id}_{user}_{prog_bucket}"
-                        picked_prog_label = st.selectbox("Pick who wins it and how:", prog_option_labels, index=prog_default_index, key=prog_key)
-                        if picked_prog_label != "Select...":
-                            entry = prog_label_to_entry[picked_prog_label]
-                            q4_progression_pick = f"{entry['team']} {entry['stage_label']}"
-                    st.markdown("</div>", unsafe_allow_html=True)
 
                 q3_adv = None
                 if not qf_plus:
@@ -1399,6 +1355,65 @@ with tab2:
                     else:
                         saved_method = str(m_row.get(f'{user}_MethodOfFirstGoal', "")).strip()
                         q5_method = st.radio("Select method:", METHOD_OPTIONS, index=saved_index(METHOD_OPTIONS, saved_method), key=f"q5_{m_id}_{user}")
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                if sf_plus:
+                    st.markdown("<div class='prediction-card'>", unsafe_allow_html=True)
+                    progression_max = max([e['points'] for e in progression_ladder], default=0)
+                    st.markdown(f"#### 🏁 Method of progression — who wins it, and in which stage? (up to {progression_max} pts)")
+                    if not progression_ladder:
+                        st.warning("⚠️ No progression odds found for this match — check Progression_Data in Match_Odds_Feed.")
+                    elif q2_home_score is None or q2_away_score is None or not q4_time:
+                        st.caption("👆 Answer your exact score and time of 1st goal above first — those narrow this down to only the options that actually still make sense.")
+                    else:
+                        # A goal that happens in ET necessarily means the entire 90 minutes of
+                        # normal time were scoreless (0-0) - so NT becomes impossible as a win
+                        # stage in that case, since nobody could have sealed a normal-time win
+                        # with zero goals in normal time. If the 1st goal was in NT instead, both
+                        # NT and ET stay open - a goal in NT doesn't rule out the game later
+                        # being pegged back and decided in ET.
+                        if q4_time in ("1st Half ET", "2nd Half ET"):
+                            stages_allowed = ("ET",)
+                        else:
+                            stages_allowed = ("NT", "ET")
+
+                        # The exact score (draw vs. clear winner) decides team/PK eligibility;
+                        # stages_allowed (from time of 1st goal) then further narrows NT/ET.
+                        if q2_home_score == q2_away_score:
+                            eligible_progression = [e for e in progression_ladder if e["stage_code"] == "PK"]
+                            st.caption("Your score is a draw after ET — that can only mean penalties. Showing PK options only.")
+                        elif q2_home_score > q2_away_score:
+                            eligible_progression = [e for e in progression_ladder if e["team"] == home_clean and e["stage_code"] in stages_allowed]
+                            stage_note = " (the 1st goal was in ET, so a Normal Time win isn't possible)" if stages_allowed == ("ET",) else ""
+                            st.caption(f"You predicted {home_clean} winning outright — showing {home_clean}'s options only{stage_note}.")
+                        else:
+                            eligible_progression = [e for e in progression_ladder if e["team"] == away_clean and e["stage_code"] in stages_allowed]
+                            stage_note = " (the 1st goal was in ET, so a Normal Time win isn't possible)" if stages_allowed == ("ET",) else ""
+                            st.caption(f"You predicted {away_clean} winning outright — showing {away_clean}'s options only{stage_note}.")
+
+                        prog_label_to_entry = {}
+                        prog_option_labels = ["Select..."]
+                        for e in eligible_progression:
+                            label = f"{temp_emoji(e['rank_fraction'])} {e['team']} wins in {e['stage_label']} — {e['points']} pts"
+                            prog_option_labels.append(label)
+                            prog_label_to_entry[label] = e
+
+                        saved_progression = str(m_row.get(f'{user}_ProgressionPick', "")).strip()
+                        prog_default_index = 0
+                        for idx, lbl in enumerate(prog_option_labels):
+                            entry_check = prog_label_to_entry.get(lbl)
+                            if entry_check and f"{entry_check['team']} {entry_check['stage_label']}" == saved_progression:
+                                prog_default_index = idx
+                                break
+                        # Key includes the eligibility bucket (draw/home/away), the allowed
+                        # stages, AND user, so the picker resets cleanly whenever the exact
+                        # score or time-of-1st-goal changes, or when switching between users.
+                        prog_bucket = "draw" if q2_home_score == q2_away_score else ("home" if q2_home_score > q2_away_score else "away")
+                        prog_key = f"q4prog_{m_id}_{user}_{prog_bucket}_{'-'.join(stages_allowed)}"
+                        picked_prog_label = st.selectbox("Pick who wins it and how:", prog_option_labels, index=prog_default_index, key=prog_key)
+                        if picked_prog_label != "Select...":
+                            entry = prog_label_to_entry[picked_prog_label]
+                            q4_progression_pick = f"{entry['team']} {entry['stage_label']}"
                     st.markdown("</div>", unsafe_allow_html=True)
 
                 q6_pick = None
@@ -1703,12 +1718,19 @@ with tab3:
                     if not progression_ladder_admin:
                         st.warning("⚠️ No progression odds found for this match — check Progression_Data in Match_Odds_Feed.")
                     else:
+                        # Same logic as the user-facing picker: a goal in ET means normal time
+                        # was scoreless, so NT is impossible as a win stage in that case.
+                        if actual_time_val in ("1st Half ET", "2nd Half ET"):
+                            admin_stages_allowed = ("ET",)
+                        else:
+                            admin_stages_allowed = ("NT", "ET")
+
                         if actual_home_score == actual_away_score:
                             eligible_progression_admin = [e for e in progression_ladder_admin if e["stage_code"] == "PK"]
                         elif actual_home_score > actual_away_score:
-                            eligible_progression_admin = [e for e in progression_ladder_admin if e["team"] == home_clean and e["stage_code"] in ("NT", "ET")]
+                            eligible_progression_admin = [e for e in progression_ladder_admin if e["team"] == home_clean and e["stage_code"] in admin_stages_allowed]
                         else:
-                            eligible_progression_admin = [e for e in progression_ladder_admin if e["team"] == away_clean and e["stage_code"] in ("NT", "ET")]
+                            eligible_progression_admin = [e for e in progression_ladder_admin if e["team"] == away_clean and e["stage_code"] in admin_stages_allowed]
 
                         prog_label_to_entry_admin = {}
                         prog_admin_labels = []
