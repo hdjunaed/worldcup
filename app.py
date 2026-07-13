@@ -590,7 +590,7 @@ Q6_NO_GOAL_POINTS = 30   # points for correctly calling a true 0-0 (no goals at 
 # Temporary way to open a match for predictions before its normal rolling
 # window kicks in, without touching kickoff times. Remove/empty this list
 # once the normal window naturally reaches these matches.
-FORCE_OPEN_MATCHES = ["97", "98", "99", "100"]
+FORCE_OPEN_MATCHES = ["97", "98", "99", "100", "102"]
 
 def is_qf_plus(match_id):
     try:
