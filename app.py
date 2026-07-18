@@ -159,6 +159,32 @@ st.markdown("""
             box-shadow: 0 4px 14px rgba(0,0,0,0.4);
             border: 3px solid rgba(255,255,255,0.7);
         }
+        .final-story-card {
+            background: linear-gradient(135deg, #2b1a00, #4a2e00, #2b1a00);
+            border: 2px solid #FFD700;
+            box-shadow: 0 0 25px rgba(255, 215, 0, 0.55);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            color: #FFF6DA;
+            font-size: 1.05em;
+        }
+        .final-story-card strong {
+            color: #FFD700;
+        }
+        .final-header {
+            background: linear-gradient(270deg, #FFD700, #B8860B, #FFD700);
+            background-size: 400% 400%;
+            animation: hypeGradient 5s ease infinite;
+            border-radius: 14px;
+            padding: 14px 10px;
+            margin: 8px 0;
+            box-shadow: 0 0 22px rgba(255, 215, 0, 0.6);
+        }
+        .final-header span {
+            color: #1a1200 !important;
+            text-shadow: 0 1px 2px rgba(255,255,255,0.4);
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -412,7 +438,7 @@ def compute_match_probabilities(home, away, qualify_home_odds, qualify_away_odds
 # GROQ NARRATIVE GENERATOR
 # ==========================================
 @st.cache_data(ttl=86400)
-def generate_kid_friendly_narrative(facts: dict):
+def generate_kid_friendly_narrative(facts: dict, is_final: bool = False):
     home, away = facts["home"], facts["away"]
 
     stage_grid = (
@@ -420,42 +446,79 @@ def generate_kid_friendly_narrative(facts: dict):
         f"{away} - NT {facts.get('away_nt_pct', 0)}% / ET {facts.get('away_et_pct', 0)}% / PK {facts.get('away_pk_pct', 0)}%"
     )
 
-    prompt = f"""
-    You're a fun, kid-friendly Aussie sports commentator. Write an EXTREMELY SHORT pre-match hype line for a kids'
-    prediction game. Players are guessing: (1) who scores first, (2) if it goes to penalties, (3) who wins.
+    if is_final:
+        prompt = f"""
+        You're a fun, kid-friendly Aussie sports commentator, and this is THE BIGGEST MOMENT OF THE TOURNAMENT -
+        THE WORLD CUP FINAL. Go big. This is for a kids' prediction game where players are guessing: (1) who
+        scores first, (2) if it goes to penalties, (3) who wins. Make it feel like the grand finale it is.
 
-    MATCH: {home} vs {away}
+        MATCH: {home} vs {away} — THE WORLD CUP FINAL
 
-    FACTS (already calculated - just narrate them, don't do any maths):
-    - Win chance: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
-    - Most likely to score first: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
-      vs {facts.get('away_top_scorer')} ({away}) {facts.get('away_top_scorer_pct')}%
-    - Chance the match is decided in each stage: {stage_grid}
+        FACTS (already calculated - just narrate them, don't do any maths):
+        - Win chance: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
+        - Most likely to score first: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
+          vs {facts.get('away_top_scorer')} ({away}) {facts.get('away_top_scorer_pct')}%
+        - Chance the match is decided in each stage: {stage_grid}
 
-    YOUR JOB: look at that stage grid and make your OWN call - Normal Time, Extra Time, or Penalties, and who
-    wins it that way. A wrong call is completely fine, this is just for fun - just make it an informed guess
-    based on those numbers, not a random pick.
+        YOUR JOB: look at that stage grid and make your OWN call - Normal Time, Extra Time, or Penalties, and who
+        wins it that way. A wrong call is completely fine, this is just for fun - just make it an informed guess
+        based on those numbers, not a random pick.
 
-    STRICT RULES:
-    - MAXIMUM 2 short sentences. Total. That's the entire brief - be brutally concise, this is a compressed
-      hype line, not a story.
-    - Squeeze in all 3: the win favourite, the first-scorer pick, and your NT/ET/PK call.
-    - **Bold** the key names, teams and percentages.
-    - 1-2 emoji max.
-    - Say "chance" / "favoured" - never "odds", "bet", "stake", or anything gambling-related.
-    - Every player name needs their country right next to it (e.g. "PlayerName (Country)").
-    - No jokes based on nationality, culture, accent, or flag.
-    - Vary your opening words each time - don't reuse the same opener call after call.
+        RULES:
+        - This is the ONE match all tournament where you get to go big: 4-6 punchy, dramatic sentences instead
+          of the usual 2 - build genuine excitement, like this is the moment everything's been building to.
+        - Still cover all 3: the win favourite, the first-scorer pick, and your NT/ET/PK call - but now you have
+          room to make each one feel like a big moment, not just state it.
+        - **Bold** the key names, teams and percentages.
+        - Emoji are very welcome here - 4-6 across the whole thing (🏆🔥⚽👑✨ etc), more than a normal match.
+        - Say "chance" / "favoured" - never "odds", "bet", "stake", or anything gambling-related.
+        - Every player name needs their country right next to it (e.g. "PlayerName (Country)").
+        - No jokes based on nationality, culture, accent, or flag.
+        - Vary your opening words each time - don't reuse the same opener call after call.
+        - Lean into "this is it, the whole tournament comes down to this" energy - it's earned here.
 
-    Write it now (2 sentences max, no preamble):
-    """
+        Write it now (4-6 dramatic sentences, no preamble):
+        """
+        max_tokens = 320
+    else:
+        prompt = f"""
+        You're a fun, kid-friendly Aussie sports commentator. Write an EXTREMELY SHORT pre-match hype line for a kids'
+        prediction game. Players are guessing: (1) who scores first, (2) if it goes to penalties, (3) who wins.
+
+        MATCH: {home} vs {away}
+
+        FACTS (already calculated - just narrate them, don't do any maths):
+        - Win chance: {home} {facts.get('qualify_home_pct')}% vs {away} {facts.get('qualify_away_pct')}%
+        - Most likely to score first: {facts.get('home_top_scorer')} ({home}) {facts.get('home_top_scorer_pct')}%
+          vs {facts.get('away_top_scorer')} ({away}) {facts.get('away_top_scorer_pct')}%
+        - Chance the match is decided in each stage: {stage_grid}
+
+        YOUR JOB: look at that stage grid and make your OWN call - Normal Time, Extra Time, or Penalties, and who
+        wins it that way. A wrong call is completely fine, this is just for fun - just make it an informed guess
+        based on those numbers, not a random pick.
+
+        STRICT RULES:
+        - MAXIMUM 2 short sentences. Total. That's the entire brief - be brutally concise, this is a compressed
+          hype line, not a story.
+        - Squeeze in all 3: the win favourite, the first-scorer pick, and your NT/ET/PK call.
+        - **Bold** the key names, teams and percentages.
+        - 1-2 emoji max.
+        - Say "chance" / "favoured" - never "odds", "bet", "stake", or anything gambling-related.
+        - Every player name needs their country right next to it (e.g. "PlayerName (Country)").
+        - No jokes based on nationality, culture, accent, or flag.
+        - Vary your opening words each time - don't reuse the same opener call after call.
+
+        Write it now (2 sentences max, no preamble):
+        """
+        max_tokens = 120
+
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             temperature=1.0,
-            max_tokens=120,
+            max_tokens=max_tokens,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -650,6 +713,7 @@ def is_qf_plus(match_id):
 # done and dusted, so this only ever applies from 101 onward.
 # ==========================================
 SF_MATCH_ID_THRESHOLD = 101
+FINAL_MATCH_ID = "104"
 
 def is_sf_plus(match_id):
     try:
@@ -834,6 +898,40 @@ def render_hype_banner():
     """, unsafe_allow_html=True)
 
 render_hype_banner()
+
+# ==========================================
+# FINAL-ONLY BANNER — extra, on top of (not instead of) the global hype banner
+# above. Only shown when a user actually selects Match 104 to predict, inside
+# the Submit Predictions tab. Falls back to reusing the same 3 GIFs from
+# HYPE_GIFS if no dedicated Final-only GIFs exist yet - if you want the Final
+# to have its OWN separate GIFs (e.g. a trophy lift, confetti, fireworks),
+# just drop them in /assets/ with these filenames and they'll take over
+# automatically, no code change needed:
+#   assets/Final_Trophy.gif
+#   assets/Final_Confetti.gif
+# ==========================================
+FINAL_GIFS = [
+    ("assets/Final_Trophy.gif", "Trophy lift"),
+    ("assets/Final_Confetti.gif", "Confetti celebration"),
+]
+
+def render_final_match_banner():
+    gifs_to_use = FINAL_GIFS if any(os.path.exists(p) for p, _ in FINAL_GIFS) else HYPE_GIFS
+    images_html = ""
+    for path, alt in gifs_to_use:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            images_html += f'<img src="data:image/gif;base64,{b64}" alt="{alt}">'
+    if not images_html:
+        return
+    st.markdown(f"""
+    <div class="hype-banner">
+        <h1>👑 THE WORLD CUP FINAL 👑</h1>
+        <p>VAMOS VAMOS VAMOS! Everything comes down to this one. Lock in your legend pick! 🔥🏆🔥</p>
+        <div class="hype-gif-row">{images_html}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs(["📊 Leaderboard", "⚽ Submit Predictions", "🔒 Admin Engine"])
 
@@ -1195,16 +1293,30 @@ with tab2:
             home_flag_html = f'<img src="{home_flag}" style="width:28px; vertical-align:middle; margin-right:6px; border-radius:3px;">' if home_flag else ''
             away_flag_html = f'<img src="{away_flag}" style="width:28px; vertical-align:middle; margin-right:6px; border-radius:3px;">' if away_flag else ''
 
+            is_final_header = str(m_id) == FINAL_MATCH_ID
+            if is_final_header:
+                render_final_match_banner()
+                st.markdown(
+                    "<div style='text-align:center; font-size:1.4em; margin-top:10px;'>🏆👑 <strong>WORLD CUP FINAL</strong> 👑🏆</div>",
+                    unsafe_allow_html=True
+                )
+
             # A single flex row (not st.columns, which stacks vertically on mobile) so
             # "Country1 vs Country2" always stays on one horizontal line, phones included.
+            # The Final gets an extra gold glowing container around this same row.
+            header_open = "<div class='final-header'>" if is_final_header else ""
+            header_close = "</div>" if is_final_header else ""
+            trophy_flank = "🏆 " if is_final_header else ""
             st.markdown(
                 f"""
+                {header_open}
                 <div style='display:flex; align-items:center; justify-content:center; flex-wrap:nowrap;
                             gap:8px; margin:8px 0; white-space:nowrap; overflow-x:auto;'>
-                    <span style='font-size:clamp(0.85em, 3.8vw, 1.25em); font-weight:700;'>{home_flag_html}{home_clean}</span>
+                    <span style='font-size:clamp(0.85em, 3.8vw, 1.25em); font-weight:700;'>{trophy_flank}{home_flag_html}{home_clean}</span>
                     <span style='font-size:0.8em; opacity:0.55; font-weight:600;'>vs</span>
-                    <span style='font-size:clamp(0.85em, 3.8vw, 1.25em); font-weight:700;'>{away_flag_html}{away_clean}</span>
+                    <span style='font-size:clamp(0.85em, 3.8vw, 1.25em); font-weight:700;'>{away_flag_html}{away_clean}{(' ' + trophy_flank) if trophy_flank else ''}</span>
                 </div>
+                {header_close}
                 """,
                 unsafe_allow_html=True
             )
@@ -1291,10 +1403,13 @@ with tab2:
                     max_pts = 30
                     st.info(f"🏆 Knockout Stage: {max_pts} Points Total")
 
+                is_final = str(m_id) == FINAL_MATCH_ID
+
                 if odds_data is not None:
                     # Only run the AI if the GOOGLE_API_KEY is present in secrets
                     if "GOOGLE_API_KEY" in st.secrets:
-                        with st.spinner("🎤 Crossing to the commentary box for the pre-match scoop..."):
+                        spinner_text = "🎤🏆 Crossing to the commentary box for THE GRAND FINALE scoop..." if is_final else "🎤 Crossing to the commentary box for the pre-match scoop..."
+                        with st.spinner(spinner_text):
                             match_facts = compute_match_probabilities(
                                 home_clean,
                                 away_clean,
@@ -1303,13 +1418,17 @@ with tab2:
                                 str(odds_data.get('Progression_Data', 'No data')),
                                 str(odds_data.get('First_Scorer_Data', 'No data'))
                             )
-                            narrative = generate_kid_friendly_narrative(match_facts)
+                            narrative = generate_kid_friendly_narrative(match_facts, is_final=is_final)
                         # Convert markdown **bold** to real <strong> tags - markdown syntax does NOT get
                         # re-parsed once it's inside a raw HTML block, so we have to do this conversion
                         # ourselves before injecting it into the story-card div.
                         narrative_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", narrative)
-                        # Display it in a styled custom box
-                        st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative_html}<br><br><span style='font-size:0.7em; opacity:0.5;'>⚡ Powered by Groq</span></div>", unsafe_allow_html=True)
+                        # Display it in a styled custom box - the Final gets the extra-flashy
+                        # gold/glowing variant instead of the plain green one.
+                        if is_final:
+                            st.markdown(f"<div class='final-story-card'>🎙️🏆 <strong>THE GRAND FINALE SCOOP</strong> 🏆🎙️<br><br>{narrative_html}<br><br><span style='font-size:0.7em; opacity:0.7;'>⚡ Powered by Groq</span></div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<div class='story-card'>🎙️ <strong>The Pre-Match Scoop:</strong><br><br>{narrative_html}<br><br><span style='font-size:0.7em; opacity:0.5;'>⚡ Powered by Groq</span></div>", unsafe_allow_html=True)
                     else:
                         st.warning("⚠️ Commentary offline. Missing GOOGLE_API_KEY in Streamlit secrets.")
                 # --------------------------------------
