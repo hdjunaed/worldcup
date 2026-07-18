@@ -902,23 +902,25 @@ render_hype_banner()
 # ==========================================
 # FINAL-ONLY BANNER — extra, on top of (not instead of) the global hype banner
 # above. Only shown when a user actually selects Match 104 to predict, inside
-# the Submit Predictions tab. Falls back to reusing the same 3 GIFs from
-# HYPE_GIFS if no dedicated Final-only GIFs exist yet - if you want the Final
-# to have its OWN separate GIFs (e.g. a trophy lift, confetti, fireworks),
-# just drop them in /assets/ with these filenames and they'll take over
-# automatically, no code change needed:
-#   assets/Final_Trophy.gif
-#   assets/Final_Confetti.gif
+# the Submit Predictions tab. Uses 4 dedicated Final-only GIFs, deliberately
+# NOT the same 3 used in the global hype banner - if these aren't uploaded
+# yet, the banner just skips the GIF row rather than falling back to the old
+# ones. Put these 4 files in your repo's /assets/ folder:
+#   assets/Messi_Selection.gif
+#   assets/Vamos_Argentina.gif
+#   assets/Vamos_Spain.gif
+#   assets/Yamal_Selection.gif
 # ==========================================
 FINAL_GIFS = [
-    ("assets/Final_Trophy.gif", "Trophy lift"),
-    ("assets/Final_Confetti.gif", "Confetti celebration"),
+    ("assets/Messi_Selection.gif", "Messi"),
+    ("assets/Vamos_Argentina.gif", "Vamos Argentina"),
+    ("assets/Vamos_Spain.gif", "Vamos Spain"),
+    ("assets/Yamal_Selection.gif", "Yamal"),
 ]
 
 def render_final_match_banner():
-    gifs_to_use = FINAL_GIFS if any(os.path.exists(p) for p, _ in FINAL_GIFS) else HYPE_GIFS
     images_html = ""
-    for path, alt in gifs_to_use:
+    for path, alt in FINAL_GIFS:
         if os.path.exists(path):
             with open(path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode()
