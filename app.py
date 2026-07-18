@@ -188,6 +188,23 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- BACKGROUND AUDIO ---
+@st.cache_data
+def _load_audio_b64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+def render_background_audio(path):
+    if os.path.exists(path):
+        b64 = _load_audio_b64(path)
+        st.markdown(f"""
+            <audio autoplay loop>
+                <source src="data:audio/mp3;base64,{b64}" type="audio/mpeg">
+            </audio>
+        """, unsafe_allow_html=True)
+
+render_background_audio("assets/bgm.mp3")
+
 # --- NEWS TICKER ---
 @st.cache_data(ttl=900)
 def fetch_ticker_string():
