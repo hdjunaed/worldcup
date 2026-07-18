@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import base64
 from datetime import datetime, timedelta
 import pytz
 import gspread
@@ -116,6 +117,47 @@ st.markdown("""
             padding: 15px;
             border-radius: 5px;
             margin-bottom: 20px;
+        }
+        .hype-banner {
+            background: linear-gradient(270deg, #FFD700, #FF1E1E, #198754, #1E3A8A, #FFD700);
+            background-size: 800% 800%;
+            animation: hypeGradient 8s ease infinite;
+            border-radius: 20px;
+            padding: 22px 16px 26px 16px;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.45);
+        }
+        @keyframes hypeGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .hype-banner h1 {
+            color: white;
+            text-shadow: 2px 2px 6px rgba(0,0,0,0.6);
+            font-size: 2.1em;
+            margin: 0 0 6px 0;
+        }
+        .hype-banner p {
+            color: white;
+            font-weight: 600;
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.5);
+            margin: 0 0 16px 0;
+        }
+        .hype-gif-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .hype-gif-row img {
+            height: 150px;
+            width: auto;
+            border-radius: 12px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+            border: 3px solid rgba(255,255,255,0.7);
         }
     </style>
 """, unsafe_allow_html=True)
@@ -683,22 +725,28 @@ def parse_scorer_ladder(first_scorer_str):
         e["rank_fraction"] = odds_to_fraction[e["odds"]]
     return entries
 
-# 24 distinct emoji, cold (safest pick, fewest points) -> hot (riskiest pick,
-# most points). Capped at 24 since that's the max total named players across
-# both sides (up to 12 each) for Anytime Scorer from SF+ onward. Also reused
-# for the Method of Progression ladder (up to 6 combos), which just uses a
-# smaller slice of the same gradient proportionally.
+# 60 distinct emoji, cold (safest pick, fewest points) -> hot/extreme (riskiest
+# pick, most points). No hard cap enforced in code - this scales to however many
+# distinct odds tiers a match actually has (tested against a 44-player, 25-tier
+# real match with room to spare). If a future match somehow has more than 60
+# unique tiers, just extend this list further; the mapping logic below doesn't
+# need to change. Also reused for the Method of Progression ladder (up to 6
+# combos), which just uses a smaller slice of the same gradient proportionally.
 TEMP_EMOJI_GRADIENT = [
-    "🧊", "❄️", "🥶", "🌨️", "⛄", "🌬️", "⛅", "🌥️", "🌤️", "🌦️", "🌈", "☀️",
-    "🌞", "🏖️", "🌡️", "♨️", "🥵", "🌶️", "🔥", "🌋", "⚡", "☄️", "🧨", "💥",
+    "🧊", "❄️", "🥶", "⛄", "🌨️", "🌬️", "☁️", "⛅", "🌥️", "🌦️",
+    "🌤️", "🌈", "☀️", "🌞", "🏖️", "🌻", "🍋", "🍊", "🥭", "🌡️",
+    "♨️", "🥵", "🌶️", "🔥", "🎇", "🎆", "🧨", "💥", "⚡", "🌩️",
+    "⛈️", "🌪️", "☄️", "🌋", "🚀", "🌠", "✨", "💫", "💣", "🔆",
+    "🔴", "🟠", "🟣", "🌀", "🎯", "🧿", "💎", "👑", "🏆", "🦾",
+    "🐉", "🦁", "🦅", "🐯", "🦂", "🦖", "🛸", "🪐", "🌌", "🔱",
 ]
 
 def temp_emoji(fraction):
     """Cold (favourite, low points) -> hot (longshot, high points) emoji scale.
-    Maps the 0-1 rank_fraction proportionally onto the 24-slot gradient above.
-    With <=24 distinct odds tiers this is guaranteed to give every tier its own
+    Maps the 0-1 rank_fraction proportionally onto the gradient above. With
+    <=60 distinct odds tiers this is guaranteed to give every tier its own
     unique emoji - scaling onto evenly-spaced slots and rounding can't collide
-    as long as there are 24 tiers or fewer."""
+    as long as there are 60 tiers or fewer."""
     idx = round(fraction * (len(TEMP_EMOJI_GRADIENT) - 1))
     idx = max(0, min(idx, len(TEMP_EMOJI_GRADIENT) - 1))
     return TEMP_EMOJI_GRADIENT[idx]
@@ -744,6 +792,48 @@ def get_player_note(player_name):
         return None
     note = str(match.iloc[0].get('Scoring_Note', '')).strip()
     return note if note else None
+
+# ==========================================
+# HYPE BANNER — 3rd Place Playoff + Final week!
+# Rendered once, ABOVE the tabs, so it shows no matter which tab is open -
+# Leaderboard, Submit Predictions, or Admin. Doesn't care which specific match
+# is currently active; it's just "we've reached the business end of the
+# tournament" energy from here on.
+#
+# GIFs are embedded as base64 directly inside ONE HTML block (rather than
+# separate st.image calls) so the whole banner reads as a single cohesive
+# glowing card, instead of a headline floating above disconnected widgets.
+# Put the 3 files in your repo's /assets/ folder, same place as player photos:
+#   assets/World_Cup_Football_GIF.gif
+#   assets/Yamal.gif
+#   assets/Messi.gif
+# If a file's missing, it's just skipped - the banner still renders with
+# whichever GIFs ARE present, so this never breaks the page.
+# ==========================================
+HYPE_GIFS = [
+    ("assets/World_Cup_Football_GIF.gif", "World Cup Trophy"),
+    ("assets/Yamal.gif", "Yamal celebration"),
+    ("assets/Messi.gif", "Messi celebration"),
+]
+
+def render_hype_banner():
+    images_html = ""
+    for path, alt in HYPE_GIFS:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            images_html += f'<img src="data:image/gif;base64,{b64}" alt="{alt}">'
+    if not images_html:
+        return  # no GIFs uploaded yet - skip silently rather than show a broken banner
+    st.markdown(f"""
+    <div class="hype-banner">
+        <h1>🏆 FINALS WEEK IS HERE! 🏆</h1>
+        <p>3rd Place Playoff & The FINAL — get your predictions locked in! ⚽🔥</p>
+        <div class="hype-gif-row">{images_html}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+render_hype_banner()
 
 tab1, tab2, tab3 = st.tabs(["📊 Leaderboard", "⚽ Submit Predictions", "🔒 Admin Engine"])
 
