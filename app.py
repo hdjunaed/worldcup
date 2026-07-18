@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import os
 import base64
@@ -219,26 +220,33 @@ def render_background_audio(path):
                     cursor: pointer;
                 ">🔈</button>
             </div>
-            <div id="bgm-unlock-overlay"
-                onmousedown="
-                    var a = document.getElementById('bgm-audio');
-                    var btn = document.getElementById('bgm-btn');
-                    if (a && a.paused) {{
-                        a.play().then(function() {{ if (btn) btn.innerText = '🔊'; }}).catch(function() {{}});
-                    }}
-                    this.style.pointerEvents = 'none';
-                "
-                ontouchstart="
-                    var a = document.getElementById('bgm-audio');
-                    var btn = document.getElementById('bgm-btn');
-                    if (a && a.paused) {{
-                        a.play().then(function() {{ if (btn) btn.innerText = '🔊'; }}).catch(function() {{}});
-                    }}
-                    this.style.pointerEvents = 'none';
-                "
-                style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9998; background: transparent;">
-            </div>
         """, unsafe_allow_html=True)
+
+        # Passive listener only — adds no visible or hit-testable element,
+        # so it cannot block clicks or scrolling. Starts playback on the
+        # user's first click/tap/keypress anywhere on the page.
+        components.html("""
+            <script>
+                (function() {
+                    var doc = window.parent.document;
+                    var unlock = function() {
+                        var a = doc.getElementById('bgm-audio');
+                        var btn = doc.getElementById('bgm-btn');
+                        if (a && a.paused) {
+                            a.play().then(function() {
+                                if (btn) btn.innerText = '🔊';
+                            }).catch(function() {});
+                        }
+                        doc.removeEventListener('click', unlock, true);
+                        doc.removeEventListener('touchend', unlock, true);
+                        doc.removeEventListener('keydown', unlock, true);
+                    };
+                    doc.addEventListener('click', unlock, true);
+                    doc.addEventListener('touchend', unlock, true);
+                    doc.addEventListener('keydown', unlock, true);
+                })();
+            </script>
+        """, height=0, width=0)
 
 render_background_audio("assets/bgm.mp3")
 
