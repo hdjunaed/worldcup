@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import os
 import base64
@@ -221,32 +220,6 @@ def render_background_audio(path):
                 ">🔈</button>
             </div>
         """, unsafe_allow_html=True)
-
-        # Passive listener only — adds no visible or hit-testable element,
-        # so it cannot block clicks or scrolling. Starts playback on the
-        # user's first click/tap/keypress anywhere on the page.
-        components.html("""
-            <script>
-                (function() {
-                    var doc = window.parent.document;
-                    var unlock = function() {
-                        var a = doc.getElementById('bgm-audio');
-                        var btn = doc.getElementById('bgm-btn');
-                        if (a && a.paused) {
-                            a.play().then(function() {
-                                if (btn) btn.innerText = '🔊';
-                            }).catch(function() {});
-                        }
-                        doc.removeEventListener('click', unlock, true);
-                        doc.removeEventListener('touchend', unlock, true);
-                        doc.removeEventListener('keydown', unlock, true);
-                    };
-                    doc.addEventListener('click', unlock, true);
-                    doc.addEventListener('touchend', unlock, true);
-                    doc.addEventListener('keydown', unlock, true);
-                })();
-            </script>
-        """, height=0, width=0)
 
 render_background_audio("assets/bgm.mp3")
 
@@ -1334,7 +1307,11 @@ with tab2:
             st.info("No matches scheduled for this specific rolling window are open right now.")
         else:
             match_options = open_matches.apply(lambda r: f"Match {r['Match_ID']}: {clean_country_name(r['Home_Team'])} vs {clean_country_name(r['Away_Team'])} ({r['Kickoff_AEST'].strftime('%a, %d %b %I:%M %p')})", axis=1).tolist()
-            selected_pred_match = st.selectbox("Choose a match to log/modify:", match_options)
+            if len(match_options) == 1:
+                selected_pred_match = match_options[0]
+                st.markdown(f"**Match:** {selected_pred_match}")
+            else:
+                selected_pred_match = st.selectbox("Choose a match to log/modify:", match_options)
 
             m_id = selected_pred_match.split(":")[0].replace("Match ", "").strip()
             stage = get_match_stage(m_id)
