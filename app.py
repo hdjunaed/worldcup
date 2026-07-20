@@ -185,6 +185,66 @@ st.markdown("""
             color: #1a1200 !important;
             text-shadow: 0 1px 2px rgba(255,255,255,0.4);
         }
+        .champion-banner {
+            background: linear-gradient(270deg, #FFD700, #FF1E1E, #198754, #1E3A8A, #FFD700);
+            background-size: 800% 800%;
+            animation: hypeGradient 8s ease infinite;
+            border-radius: 20px;
+            padding: 28px 16px 32px 16px;
+            text-align: center;
+            margin-bottom: 12px;
+            box-shadow: 0 0 40px rgba(255, 215, 0, 0.55);
+        }
+        .champion-banner h1 {
+            color: white;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.6);
+            font-size: 2.4em;
+            margin: 0 0 8px 0;
+        }
+        .champion-banner p {
+            color: white;
+            font-weight: 600;
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.5);
+            margin: 0;
+            font-size: 1.1em;
+        }
+        .champion-card {
+            background: linear-gradient(135deg, #4a2e00, #6b3f00, #4a2e00);
+            border: 3px solid #FFD700;
+            box-shadow: 0 0 35px rgba(255, 215, 0, 0.7);
+            padding: 26px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .champion-card h2 {
+            color: #FFD700 !important;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            font-size: 1.8em;
+            margin: 0 0 10px 0;
+        }
+        .champion-card p {
+            color: #FFF6DA !important;
+            font-size: 1.1em;
+            margin: 6px 0;
+        }
+        .thankyou-card {
+            background-color: #e8f5e9;
+            border-left: 6px solid #198754;
+            padding: 20px 24px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .thankyou-card h3 {
+            color: #198754 !important;
+            margin: 0 0 8px 0;
+        }
+        .thankyou-card p {
+            color: #1a1a1a !important;
+            font-size: 1.02em;
+            margin: 0;
+            line-height: 1.5;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -891,6 +951,99 @@ def get_player_note(player_name):
         return None
     note = str(match.iloc[0].get('Scoring_Note', '')).strip()
     return note if note else None
+
+# ==========================================
+# TOURNAMENT COMPLETION CHECK
+# Once the admin finalizes the Final match (Status = "Completed") AND the
+# once-off predictions (Golden Boot + Champion both locked), the whole app
+# collapses into a single grand finale page — no tabs, no more predictions,
+# no more admin controls, just the final leaderboard and a thank-you to
+# everyone who played. To reopen the app later (e.g. to fix a scoring typo),
+# just clear those Status/Locked flags back in the Google Sheet — no code
+# change needed, this check re-evaluates fresh on every load.
+# ==========================================
+def is_tournament_complete():
+    final_done = False
+    if not knockout_df.empty:
+        final_rows = knockout_df[knockout_df['Match_ID'] == FINAL_MATCH_ID]
+        if not final_rows.empty:
+            final_done = str(final_rows.iloc[0].get('Status', '')).strip() == 'Completed'
+
+    once_off_done = False
+    if not once_off_df.empty:
+        once_off_done = all(
+            str(r.get('GoldenBoot_Locked', '')).strip().upper() == 'TRUE'
+            and str(r.get('Champion_Locked', '')).strip().upper() == 'TRUE'
+            for _, r in once_off_df.iterrows()
+        )
+
+    return final_done and once_off_done
+
+
+def render_grand_finale():
+    finale_sorted = leaderboard_df.sort_values(by="Points", ascending=False).reset_index(drop=True)
+    top_pts = finale_sorted["Points"].max() if not finale_sorted.empty else 0
+    champions = finale_sorted.loc[finale_sorted["Points"] == top_pts, "Participant"].tolist()
+    others = [p for p in finale_sorted["Participant"].tolist() if p not in champions]
+
+    st.markdown("""
+        <div class="champion-banner">
+            <h1>🏆 THE WORLD CUP CHALLENGE IS A WRAP! 🏆</h1>
+            <p>Every match played, every prediction scored — here's how it all ended up.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    thanks_gif_path = "assets/Thanks.gif"
+    if os.path.exists(thanks_gif_path):
+        with open(thanks_gif_path, "rb") as f:
+            thanks_b64 = base64.b64encode(f.read()).decode()
+        st.markdown(
+            f'<div style="text-align:center; margin: 4px 0 24px 0;">'
+            f'<img src="data:image/gif;base64,{thanks_b64}" style="max-width:340px; width:100%; border-radius:14px; box-shadow:0 4px 18px rgba(0,0,0,0.35);">'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    champ_names = " & ".join(champions) if champions else "our champion"
+    is_tie = len(champions) > 1
+    st.markdown(f"""
+        <div class="champion-card">
+            <h2>👑 Congratulations {champ_names}! 👑</h2>
+            <p>{'You are the co-champions' if is_tie else 'You are the champion'} of the World Cup Challenge, finishing on top with <strong>{top_pts} pts</strong>!</p>
+            <p>🎁 Your <strong>$20 Kmart gift voucher</strong> is on its way to you — enjoy!</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+    st.markdown("### 🏁 Final Standings")
+
+    def _highlight_champ(row):
+        if row["Points"] == top_pts:
+            return ["background-color: #FFD700; color: #1a1a1a; font-weight: bold;"] * len(row)
+        return [""] * len(row)
+
+    styled_finale = finale_sorted.style.apply(_highlight_champ, axis=1)
+    st.dataframe(
+        styled_finale,
+        use_container_width=True, hide_index=True,
+        column_config={"Participant": "Player", "Points": st.column_config.NumberColumn("Total Points", format="%d pts")}
+    )
+
+    if others:
+        st.divider()
+        st.markdown(f"""
+            <div class="thankyou-card">
+                <h3>🙌 Thank You, {', '.join(others)}!</h3>
+                <p>Massive thanks for being such good sports throughout this World Cup — every prediction,
+                every close call, and every bit of banter made this genuinely fun to run. Hopefully this
+                little app added an extra bit of enjoyment to the tournament for you. See you at the next one! ⚽🎉</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+
+if is_tournament_complete():
+    render_grand_finale()
+    st.stop()
 
 # ==========================================
 # HYPE BANNER — 3rd Place Playoff + Final week!
